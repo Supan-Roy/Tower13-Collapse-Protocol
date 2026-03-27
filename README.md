@@ -37,4 +37,5 @@ Open `index.html` in your browser.
 ## Credits
 
 Made by Jennet Caret Games
+
 Developed by Supan Roy
