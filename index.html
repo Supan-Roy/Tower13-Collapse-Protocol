@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tower 13: Collapse Protocol</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="game-shell">
+    <section class="game-container" aria-label="Tower 13 game area">
+      <header class="game-header">
+        <h1>Tower 13: Collapse Protocol</h1>
+        <p id="floor-indicator" class="floor-indicator">Floor 5</p>
+      </header>
+
+      <section class="grid-panel" aria-label="Room grid">
+        <div id="room-grid" class="room-grid" role="grid" aria-label="3 by 3 room grid"></div>
+        <p class="grid-help">Click a door on a room edge to open it, then move through open connections.</p>
+      </section>
+
+      <section class="info-panel" aria-live="polite" aria-label="Game information">
+        <h2>System Log</h2>
+        <p id="info-message">Open a nearby door, then click an adjacent room to move.</p>
+      </section>
+
+      <section class="inventory-bar" aria-label="Inventory">
+        <h2>Inventory</h2>
+        <p>Empty</p>
+      </section>
+    </section>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
