@@ -10,18 +10,23 @@
   <main class="game-shell">
     <section class="game-container" aria-label="Tower 13 game area">
       <header class="game-header">
-        <h1>Tower 13: Collapse Protocol</h1>
-        <p id="floor-indicator" class="floor-indicator">Floor 5</p>
+        <div class="game-header__row">
+          <div>
+            <h1>Tower 13: Collapse Protocol</h1>
+            <p id="floor-indicator" class="floor-indicator">Floor 5</p>
+          </div>
+          <button type="button" id="restart-button" class="restart-button">Restart</button>
+        </div>
       </header>
 
       <section class="grid-panel" aria-label="Room grid">
         <div id="room-grid" class="room-grid" role="grid" aria-label="3 by 3 room grid"></div>
-        <p class="grid-help">Click a door on a room edge to open it, then move through open connections.</p>
+        <p class="grid-help">Door locks: random MCQ or archery mini-game (score 9–10). Each doorway clears once solved.</p>
       </section>
 
       <section class="info-panel" aria-live="polite" aria-label="Game information">
         <h2>System Log</h2>
-        <p id="info-message">Open a nearby door, then click an adjacent room to move.</p>
+        <p id="info-message" class="info-message">Door locks: random quiz or archery — hit ring 9–10 on the target to clear.</p>
       </section>
 
       <section class="inventory-bar" aria-label="Inventory">
@@ -29,8 +34,49 @@
         <p>Empty</p>
       </section>
     </section>
+
+    <div id="explosion-flash" class="explosion-flash" hidden aria-hidden="true"></div>
+
+    <div id="puzzle-modal" class="puzzle-modal" role="dialog" aria-modal="true" aria-labelledby="puzzle-modal-title" aria-hidden="true" hidden>
+      <div class="puzzle-modal__panel">
+        <h2 id="puzzle-modal-title" class="puzzle-modal__title">Door lock — clearance test</h2>
+        <p id="puzzle-question" class="puzzle-modal__question"></p>
+        <div id="puzzle-archery-wrap" class="puzzle-archery-wrap" hidden>
+          <aside class="puzzle-archery__aside puzzle-archery__aside--left" aria-label="How to shoot">
+            <span class="puzzle-archery__label">Instructions</span>
+            <p class="puzzle-archery__hint">
+              Press and hold <strong>on the bow</strong> (lower-left of the range). Drag away from the bow to <strong>aim</strong> and <strong>draw</strong> — longer pull = more speed. <strong>Release</strong> to loose. The arrow drops with gravity; use the green arc as a guide. Only rings <strong>9–10</strong> (gold center) clear the lock.
+            </p>
+          </aside>
+          <div class="puzzle-archery__canvas-shell">
+            <canvas id="archery-canvas" width="360" height="400" aria-label="Archery — pull from bow to aim and power, release"></canvas>
+          </div>
+          <aside class="puzzle-archery__aside puzzle-archery__aside--right" aria-label="Shot result">
+            <span class="puzzle-archery__label">Last shot</span>
+            <p id="archery-last-score" class="puzzle-archery__last" aria-live="polite"></p>
+            <p id="archery-feedback" class="puzzle-archery__retry" aria-live="polite"></p>
+          </aside>
+        </div>
+        <div id="puzzle-options" class="puzzle-modal__options"></div>
+        <p id="puzzle-feedback" class="puzzle-modal__feedback" aria-live="polite"></p>
+        <button type="button" id="puzzle-cancel" class="restart-button">Cancel</button>
+      </div>
+    </div>
+
+    <div id="game-over-overlay" class="game-over-overlay" aria-hidden="true" hidden>
+      <div class="game-over-overlay__panel">
+        <p class="game-over-overlay__kicker">FATAL EVENT</p>
+        <p class="game-over-overlay__title">GAME OVER</p>
+        <p id="game-over-death-msg" class="game-over-overlay__death"></p>
+        <p class="game-over-overlay__subtitle">You ignored the warning signs nearby.</p>
+        <button type="button" id="overlay-restart-button" class="restart-button restart-button--primary">Restart</button>
+        <p class="game-over-overlay__hint">Or press Enter</p>
+      </div>
+    </div>
   </main>
 
+  <script src="puzzle-bank.js"></script>
+  <script src="archery-minigame.js"></script>
   <script src="script.js"></script>
 </body>
 </html>

@@ -11,6 +11,8 @@
   --wall: #7f8eb6;
   --door-closed: #9b7a4e;
   --door-open: #67d8b1;
+  --clue-accent: #c9a227;
+  --stairs-accent: #6eb5ff;
 }
 
 * {
@@ -33,6 +35,7 @@ body {
 }
 
 .game-container {
+  position: relative;
   width: min(92vw, 760px);
   background: rgba(14, 17, 26, 0.92);
   border: 1px solid var(--border);
@@ -40,6 +43,71 @@ body {
   padding: 1.5rem;
   display: grid;
   gap: 1.2rem;
+}
+
+@keyframes screenShake {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  18% {
+    transform: translate3d(-7px, 4px, 0);
+  }
+  36% {
+    transform: translate3d(6px, -3px, 0);
+  }
+  54% {
+    transform: translate3d(-4px, 3px, 0);
+  }
+  72% {
+    transform: translate3d(4px, -2px, 0);
+  }
+}
+
+.game-container--shake {
+  animation: screenShake 0.45s ease-out;
+}
+
+.game-container--game-over .room-grid,
+.game-container--game-over .grid-help {
+  filter: grayscale(0.4) brightness(0.88);
+}
+
+.game-header__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.restart-button {
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 0.45rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(35, 44, 68, 0.95);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.restart-button:hover {
+  background: rgba(48, 60, 92, 0.98);
+  border-color: #5a6a94;
+}
+
+.restart-button--primary {
+  margin-top: 0.75rem;
+  padding: 0.55rem 1.2rem;
+  border-color: #4a5d8a;
+  background: rgba(55, 72, 110, 0.95);
+}
+
+.restart-button--primary:hover {
+  background: rgba(68, 88, 128, 0.98);
 }
 
 .game-header h1 {
@@ -82,12 +150,18 @@ body {
 }
 
 .room.player {
-  box-shadow: inset 0 0 0 2px var(--player), 0 0 0 1px rgba(70, 214, 169, 0.5);
+  border-color: #5ee4c0;
+  box-shadow:
+    inset 0 0 0 3px rgba(70, 214, 169, 0.95),
+    0 0 0 2px rgba(70, 214, 169, 0.45),
+    0 0 22px rgba(70, 214, 169, 0.35);
+  z-index: 1;
 }
 
-.room.visited {
+.room.visited:not(.player) {
+  opacity: 0.88;
   background:
-    linear-gradient(rgba(53, 80, 122, 0.58), rgba(53, 80, 122, 0.58)),
+    linear-gradient(rgba(40, 55, 82, 0.72), rgba(40, 55, 82, 0.72)),
     repeating-linear-gradient(
       45deg,
       var(--room) 0,
@@ -95,6 +169,41 @@ body {
       var(--room-inner) 8px,
       var(--room-inner) 16px
     );
+}
+
+.room.clue {
+  border-color: rgba(201, 162, 39, 0.45);
+  box-shadow:
+    inset 0 0 0 1px rgba(201, 162, 39, 0.2),
+    0 0 14px rgba(201, 162, 39, 0.18);
+}
+
+.room.clue::after {
+  content: "";
+  position: absolute;
+  top: 20%;
+  right: 20%;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(201, 162, 39, 0.55);
+  box-shadow: 0 0 8px rgba(201, 162, 39, 0.4);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.room.stairs {
+  border-color: rgba(110, 181, 255, 0.55);
+  box-shadow:
+    inset 0 0 0 1px rgba(110, 181, 255, 0.25),
+    0 0 12px rgba(80, 140, 220, 0.22);
+}
+
+.room.stairs.visited {
+  border-color: var(--stairs-accent);
+  box-shadow:
+    inset 0 0 0 2px rgba(110, 181, 255, 0.45),
+    0 0 18px rgba(80, 150, 255, 0.35);
 }
 
 .room-center {
@@ -184,6 +293,10 @@ body {
   background: var(--panel);
 }
 
+.info-panel {
+  border-left: 3px solid rgba(70, 214, 169, 0.45);
+}
+
 .info-panel h2,
 .inventory-bar h2 {
   margin: 0 0 0.35rem;
@@ -196,6 +309,341 @@ body {
   color: var(--muted);
 }
 
+.info-message {
+  min-height: 1.4em;
+  color: var(--text);
+  line-height: 1.45;
+  opacity: 0.65;
+  transition: opacity 0.4s ease;
+}
+
+.info-message.info-message--in {
+  opacity: 1;
+}
+
+/* Viewport-fixed overlay (not inside the card grid — avoids “stuck in title bar” layout) */
+.game-over-overlay[hidden] {
+  display: none !important;
+}
+
+.game-over-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10040;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(4, 6, 12, 0.88);
+  backdrop-filter: blur(6px);
+  pointer-events: auto;
+}
+
+.game-over-overlay__panel {
+  text-align: center;
+  max-width: 26rem;
+  position: relative;
+  z-index: 1;
+  pointer-events: auto;
+  padding: 1.25rem 1rem;
+  border: 1px solid rgba(255, 60, 60, 0.45);
+  border-radius: 12px;
+  background: linear-gradient(165deg, rgba(35, 12, 12, 0.95) 0%, rgba(12, 14, 22, 0.98) 100%);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.5),
+    0 12px 40px rgba(180, 30, 20, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.game-over-overlay__kicker {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  color: #ff6b5e;
+  text-transform: uppercase;
+}
+
+.game-over-overlay__title {
+  margin: 0.35rem 0 0;
+  font-size: clamp(2rem, 6vw, 3rem);
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  color: #fff5f3;
+  text-shadow:
+    0 0 20px rgba(255, 80, 60, 0.75),
+    0 2px 0 rgba(60, 10, 10, 0.9);
+}
+
+.game-over-overlay__death {
+  margin: 1rem 0 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.45;
+  color: #ffd4cf;
+}
+
+.game-over-overlay__subtitle {
+  margin: 0.85rem 0 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.game-over-overlay__hint {
+  margin: 1rem 0 0;
+  font-size: 0.82rem;
+  color: #6c7a9e;
+}
+
+/* Full-screen explosion burst (above game UI, below cursor-blocking overlay order handled in JS timing) */
+.explosion-flash[hidden] {
+  display: none !important;
+}
+
+.explosion-flash {
+  position: fixed;
+  inset: 0;
+  z-index: 10050;
+  pointer-events: none;
+  display: block;
+  background:
+    radial-gradient(ellipse 80% 55% at 50% 48%, rgba(255, 245, 200, 0.95) 0%, transparent 45%),
+    radial-gradient(ellipse 100% 80% at 50% 50%, rgba(255, 90, 30, 0.65) 0%, transparent 55%),
+    radial-gradient(circle at 50% 50%, rgba(80, 20, 10, 0.5) 0%, transparent 65%);
+  opacity: 0;
+  transform: scale(0.85);
+  filter: brightness(1.2) saturate(1.3);
+}
+
+.explosion-flash.explosion-flash--active {
+  animation: explosionBurst 0.65s ease-out forwards;
+}
+
+@keyframes explosionBurst {
+  0% {
+    opacity: 0;
+    transform: scale(0.75);
+    filter: brightness(2.8) saturate(1.5);
+  }
+  12% {
+    opacity: 1;
+    transform: scale(1);
+    filter: brightness(2) saturate(1.4);
+  }
+  45% {
+    opacity: 0.85;
+    transform: scale(1.05);
+    filter: brightness(1.2);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.15);
+    filter: brightness(0.7);
+  }
+}
+
+.puzzle-modal[hidden] {
+  display: none !important;
+}
+
+.puzzle-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 10030;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(8, 10, 18, 0.82);
+  backdrop-filter: blur(4px);
+}
+
+.puzzle-modal__panel {
+  width: min(100%, 26rem);
+  max-height: min(96vh, 900px);
+  padding: 1.25rem 1.35rem;
+  overflow-y: auto;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+}
+
+.puzzle-modal--archery .puzzle-modal__panel {
+  width: min(100%, 52rem);
+  max-height: min(94vh, 920px);
+}
+
+.puzzle-modal--archery .puzzle-modal__question {
+  margin-bottom: 0.65rem;
+  font-size: 0.92rem;
+  color: #b8c4dc;
+}
+
+.puzzle-modal__title {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.puzzle-modal__question {
+  margin: 0 0 1rem;
+  font-size: 0.98rem;
+  line-height: 1.5;
+  color: #dce1f0;
+}
+
+.puzzle-modal__options {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.puzzle-option {
+  font: inherit;
+  text-align: left;
+  padding: 0.6rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: rgba(30, 38, 58, 0.95);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.puzzle-option:hover {
+  border-color: #6b7aab;
+  background: rgba(40, 50, 78, 0.98);
+}
+
+.puzzle-modal__feedback {
+  margin: 0.85rem 0 0;
+  min-height: 1.25em;
+  font-size: 0.88rem;
+  color: #e08a7a;
+}
+
+#puzzle-cancel {
+  margin-top: 1rem;
+  width: 100%;
+}
+
+.puzzle-archery-wrap {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: stretch;
+  justify-content: center;
+  gap: 0.85rem 1rem;
+  margin: 0 0 0.85rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.puzzle-archery-wrap[hidden] {
+  display: none !important;
+}
+
+.puzzle-archery__canvas-shell {
+  flex: 0 0 auto;
+  min-width: 0;
+  align-self: center;
+}
+
+#archery-canvas {
+  display: block;
+  width: 360px;
+  max-width: min(360px, 92vw);
+  height: auto;
+  aspect-ratio: 360 / 400;
+  margin: 0 auto;
+  border-radius: 10px;
+  cursor: crosshair;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06),
+    0 8px 32px rgba(0, 0, 0, 0.55);
+  touch-action: none;
+}
+
+.puzzle-archery__aside {
+  flex: 1 1 11rem;
+  min-width: 0;
+  max-width: 17rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid rgba(90, 105, 140, 0.45);
+  background: rgba(12, 16, 28, 0.65);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: #aeb8d0;
+  align-self: stretch;
+  overflow-y: auto;
+  max-height: min(420px, 52vh);
+}
+
+.puzzle-archery__aside--right {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.puzzle-archery__label {
+  display: block;
+  margin: 0 0 0.4rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #6b7a9a;
+}
+
+.puzzle-archery__hint {
+  margin: 0;
+  font-size: inherit;
+  color: #c4ccdf;
+  line-height: 1.55;
+  text-align: left;
+}
+
+.puzzle-archery__last {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #e8b86a;
+  text-align: left;
+  min-height: 1.35em;
+}
+
+.puzzle-archery__retry {
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: #e08a7a;
+  min-height: 0;
+}
+
+.puzzle-archery__retry:empty {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .puzzle-archery-wrap {
+    flex-direction: column;
+    flex-wrap: wrap;
+    align-items: stretch;
+  }
+
+  .puzzle-archery__aside {
+    max-width: none;
+    max-height: none;
+  }
+
+  .puzzle-archery__canvas-shell {
+    order: -1;
+  }
+}
+
 @media (max-width: 520px) {
   .room-grid {
     gap: 0.5rem;
@@ -203,5 +651,9 @@ body {
 
   .game-container {
     padding: 1rem;
+  }
+
+  #archery-canvas {
+    max-width: 100%;
   }
 }
