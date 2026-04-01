@@ -2,12 +2,19 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" sizes="any">
+  <link rel="shortcut icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="favicon.svg">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Tower 13: Collapse Protocol</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="game-shell">
+    <div class="game-shell__main">
     <section class="game-container" aria-label="Tower 13 game area">
       <header class="game-header">
         <div class="game-header__row">
@@ -21,12 +28,12 @@
 
       <section class="grid-panel" aria-label="Room grid">
         <div id="room-grid" class="room-grid" role="grid" aria-label="3 by 3 room grid"></div>
-        <p class="grid-help">Door locks: random MCQ or archery mini-game (score 9–10). Each doorway clears once solved.</p>
+        <p class="grid-help">Room 1,3: timed bomb defusal. Other door locks: random MCQ or archery (score 9–10). Each doorway clears once solved.</p>
       </section>
 
       <section class="info-panel" aria-live="polite" aria-label="Game information">
         <h2>System Log</h2>
-        <p id="info-message" class="info-message">Door locks: random quiz or archery — hit ring 9–10 on the target to clear.</p>
+        <p id="info-message" class="info-message">Room 1,3 is a bomb defusal (60s, three wires). Elsewhere: random quiz or archery — score 9–10 on the drone to clear.</p>
       </section>
 
       <section class="inventory-bar" aria-label="Inventory">
@@ -34,6 +41,23 @@
         <p>Empty</p>
       </section>
     </section>
+    </div>
+
+    <aside id="dev-minigames-panel" class="dev-minigames-panel" aria-label="Development mini-game launchers">
+      <h2 class="dev-minigames-panel__title">Dev · mini-games</h2>
+      <p class="dev-minigames-panel__note">Open any lock challenge without touching a door. Completing one does not change the grid.</p>
+      <ul class="dev-minigames-panel__list">
+        <li>
+          <button type="button" class="dev-minigames-panel__btn" data-dev-minigame="mcq">Door quiz (random MCQ)</button>
+        </li>
+        <li>
+          <button type="button" class="dev-minigames-panel__btn" data-dev-minigame="archery">Archery range</button>
+        </li>
+        <li>
+          <button type="button" class="dev-minigames-panel__btn" data-dev-minigame="bomb">Bomb defusal</button>
+        </li>
+      </ul>
+    </aside>
 
     <div id="explosion-flash" class="explosion-flash" hidden aria-hidden="true"></div>
 
@@ -45,17 +69,93 @@
           <aside class="puzzle-archery__aside puzzle-archery__aside--left" aria-label="How to shoot">
             <span class="puzzle-archery__label">Instructions</span>
             <p class="puzzle-archery__hint">
-              Press and hold <strong>on the bow</strong> (lower-left of the range). Drag away from the bow to <strong>aim</strong> and <strong>draw</strong> — longer pull = more speed. <strong>Release</strong> to loose. The arrow drops with gravity; use the green arc as a guide. Only rings <strong>9–10</strong> (gold center) clear the lock.
+              Press and hold <strong>on the bow</strong> (lower-left). Drag away to <strong>aim</strong> and <strong>draw</strong> — longer pull = more speed. <strong>Release</strong> to loose. The patrol <strong>drone</strong> moves in the sky; lead your shot and use the green arc. Only score <strong>9–10</strong> (dead-center hit) clears the lock.
             </p>
           </aside>
           <div class="puzzle-archery__canvas-shell">
-            <canvas id="archery-canvas" width="360" height="400" aria-label="Archery — pull from bow to aim and power, release"></canvas>
+            <canvas id="archery-canvas" width="1024" height="576" aria-label="Archery — shoot the moving drone, pull from bow to aim and power"></canvas>
           </div>
-          <aside class="puzzle-archery__aside puzzle-archery__aside--right" aria-label="Shot result">
-            <span class="puzzle-archery__label">Last shot</span>
-            <p id="archery-last-score" class="puzzle-archery__last" aria-live="polite"></p>
-            <p id="archery-feedback" class="puzzle-archery__retry" aria-live="polite"></p>
-          </aside>
+        </div>
+        <div id="puzzle-bomb-wrap" class="puzzle-bomb-wrap" hidden>
+          <div class="bomb-scene">
+            <div class="bomb-device">
+              <div class="bomb-device__strap bomb-device__strap--tl" aria-hidden="true"></div>
+              <div class="bomb-device__strap bomb-device__strap--tr" aria-hidden="true"></div>
+              <div class="bomb-device__chassis">
+                <span class="bomb-device__rivet bomb-device__rivet--tl" aria-hidden="true"></span>
+                <span class="bomb-device__rivet bomb-device__rivet--tr" aria-hidden="true"></span>
+                <span class="bomb-device__rivet bomb-device__rivet--bl" aria-hidden="true"></span>
+                <span class="bomb-device__rivet bomb-device__rivet--br" aria-hidden="true"></span>
+                <header class="bomb-device__header">
+                  <span class="bomb-device__brand">T13 · COLLAPSE CHARGE</span>
+                  <span class="bomb-device__serial">SRN 7F-Ω3 · DO NOT TILT</span>
+                </header>
+                <div class="bomb-device__lcd-shell" aria-label="Detonation timer display">
+                  <div class="bomb-device__lcd-bezel">
+                    <div class="bomb-device__lcd-vignette" aria-hidden="true"></div>
+                    <div class="bomb-device__lcd-scanlines" aria-hidden="true"></div>
+                    <span id="bomb-time-left" class="bomb-device__lcd-digits puzzle-bomb__timer" role="timer" aria-live="polite">1:00</span>
+                    <span class="bomb-device__lcd-caption">COUNTDOWN · SEC</span>
+                  </div>
+                </div>
+                <div class="bomb-device__charge-block" aria-hidden="true">
+                  <div class="bomb-device__charge-tape bomb-device__charge-tape--1"></div>
+                  <div class="bomb-device__charge-tape bomb-device__charge-tape--2"></div>
+                  <div class="bomb-device__charge-core"></div>
+                </div>
+                <div class="bomb-device__status-row">
+                  <span class="bomb-device__led bomb-device__led--armed" aria-hidden="true"></span>
+                  <span class="bomb-device__status-text">ARMED</span>
+                  <span class="bomb-device__port-label">WIRE HARNESS A — CUT ONE</span>
+                </div>
+                <div class="bomb-device__jack-row" aria-hidden="true">
+                  <span class="bomb-device__jack bomb-device__jack--red"></span>
+                  <span class="bomb-device__jack bomb-device__jack--blue"></span>
+                  <span class="bomb-device__jack bomb-device__jack--green"></span>
+                </div>
+              </div>
+              <svg class="bomb-device__wire-svg" viewBox="0 0 360 100" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+                <defs>
+                  <!-- userSpaceOnUse: objectBoundingBox gradients fail on near-vertical strokes (blue wire vanished). -->
+                  <linearGradient id="bomb-wire-grad-red" gradientUnits="userSpaceOnUse" x1="44" y1="0" x2="84" y2="100">
+                    <stop offset="0%" stop-color="#5c1010" />
+                    <stop offset="40%" stop-color="#d63030" />
+                    <stop offset="100%" stop-color="#8b2020" />
+                  </linearGradient>
+                  <linearGradient id="bomb-wire-grad-blue" gradientUnits="userSpaceOnUse" x1="168" y1="0" x2="192" y2="100">
+                    <stop offset="0%" stop-color="#14385c" />
+                    <stop offset="35%" stop-color="#5cb0ff" />
+                    <stop offset="100%" stop-color="#1a4a78" />
+                  </linearGradient>
+                  <linearGradient id="bomb-wire-grad-green" gradientUnits="userSpaceOnUse" x1="276" y1="0" x2="312" y2="100">
+                    <stop offset="0%" stop-color="#0f3a18" />
+                    <stop offset="45%" stop-color="#3ecf56" />
+                    <stop offset="100%" stop-color="#1f6a2a" />
+                  </linearGradient>
+                  <filter id="bomb-wire-shadow-red" x="-40%" y="-40%" width="180%" height="180%">
+                    <feDropShadow dx="0" dy="1" stdDeviation="1.2" flood-opacity="0.45" />
+                  </filter>
+                  <filter id="bomb-wire-shadow-blue" x="-40%" y="-40%" width="180%" height="180%">
+                    <feDropShadow dx="0" dy="1" stdDeviation="1.2" flood-opacity="0.45" />
+                  </filter>
+                  <filter id="bomb-wire-shadow-green" x="-40%" y="-40%" width="180%" height="180%">
+                    <feDropShadow dx="0" dy="1" stdDeviation="1.2" flood-opacity="0.45" />
+                  </filter>
+                </defs>
+                <path class="bomb-device__wire-path bomb-device__wire-path--red" fill="none" stroke="url(#bomb-wire-grad-red)" stroke-width="10" stroke-linecap="round" filter="url(#bomb-wire-shadow-red)" d="M 72 6 C 58 28, 48 52, 72 78" />
+                <path class="bomb-device__wire-path bomb-device__wire-path--blue" fill="none" stroke="url(#bomb-wire-grad-blue)" stroke-width="10" stroke-linecap="round" filter="url(#bomb-wire-shadow-blue)" d="M 180 6 C 177 32, 183 54, 180 78" />
+                <path class="bomb-device__wire-path bomb-device__wire-path--green" fill="none" stroke="url(#bomb-wire-grad-green)" stroke-width="10" stroke-linecap="round" filter="url(#bomb-wire-shadow-green)" d="M 288 6 C 302 28, 312 52, 288 78" />
+                <circle cx="72" cy="6" r="5" fill="#2a2a2a" stroke="#444" stroke-width="1" />
+                <circle cx="180" cy="6" r="5" fill="#2a2a2a" stroke="#444" stroke-width="1" />
+                <circle cx="288" cy="6" r="5" fill="#2a2a2a" stroke="#444" stroke-width="1" />
+              </svg>
+              <div id="bomb-wire-buttons" class="bomb-device__wire-ends"></div>
+            </div>
+          </div>
+          <div class="bomb-hint-bar">
+            <button type="button" id="bomb-hint-btn" class="bomb-hint-btn">Intel · hint</button>
+            <p id="bomb-hint-panel" class="bomb-hint-panel" hidden role="status" aria-live="polite"></p>
+          </div>
         </div>
         <div id="puzzle-options" class="puzzle-modal__options"></div>
         <p id="puzzle-feedback" class="puzzle-modal__feedback" aria-live="polite"></p>
@@ -68,7 +168,7 @@
         <p class="game-over-overlay__kicker">FATAL EVENT</p>
         <p class="game-over-overlay__title">GAME OVER</p>
         <p id="game-over-death-msg" class="game-over-overlay__death"></p>
-        <p class="game-over-overlay__subtitle">You ignored the warning signs nearby.</p>
+        <p id="game-over-subtitle" class="game-over-overlay__subtitle">You ignored the warning signs nearby.</p>
         <button type="button" id="overlay-restart-button" class="restart-button restart-button--primary">Restart</button>
         <p class="game-over-overlay__hint">Or press Enter</p>
       </div>
@@ -77,6 +177,7 @@
 
   <script src="puzzle-bank.js"></script>
   <script src="archery-minigame.js"></script>
+  <script src="bomb-defusal-minigame.js"></script>
   <script src="script.js"></script>
 </body>
 </html>

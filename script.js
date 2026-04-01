@@ -11,8 +11,15 @@ const MSG_STAIRS =
   "You found a way down... but the tower still feels unstable.";
 const MSG_DANGER_DEATH =
   "A sudden explosion engulfs the room. You didn't survive.";
+const MSG_BOMB_WRONG_WIRE =
+  "Wrong wire. The collapse charge blows — shock rips through the floor and the tower starts to go.";
+const MSG_BOMB_TIMER_DEATH =
+  "The clock hits zero. The charge detonates; the whole structure buckles around you.";
+const MSG_GAME_OVER_SUBTITLE_DEFAULT = "You ignored the warning signs nearby.";
+const MSG_GAME_OVER_SUBTITLE_COLLAPSE =
+  "Tower 13 shears apart — floors pancake and the collapse protocol claims the building.";
 const MSG_TUTORIAL =
-  "Stand in a room and open a door — each lock is a random quiz or archery (hit ring 9–10). Cleared locks stay open for that passage.";
+  "Stand in a room and open a door — room 1,3 is a timed bomb defusal; other locks are random quiz or archery vs a drone (score 9–10). Cleared locks stay open for that passage.";
 
 const EXPLOSION_SOUND_SRC = "assets/sounds/explosion-fx.mp3";
 
@@ -40,8 +47,10 @@ const puzzleModalState = {
   puzzleRaw: null,
   /** Fresh shuffle on each render — options order + correctIndex for current buttons */
   currentDisplay: null,
-  /** "mcq" | "archery" */
+  /** "mcq" | "archery" | "bomb" */
   challengeType: null,
+  /** True when the modal was opened from the dev side panel (not a real door lock) */
+  devPreview: false,
 };
 
 const ARCHERY_LOCK_CHANCE = 0.38;
@@ -199,19 +208,36 @@ function playExplosionSound() {
   }
 }
 
-function triggerExplosionFx() {
+/**
+ * @param {{ cataclysm?: boolean }} [options] — full-screen tower-collapse blast + long shake
+ */
+function triggerExplosionFx(options = {}) {
+  const cataclysm = Boolean(options.cataclysm);
   const flash = document.getElementById("explosion-flash");
   const container = document.querySelector(".game-container");
-  if (container) {
+  const shell = document.querySelector(".game-shell");
+
+  if (cataclysm && shell) {
+    shell.classList.remove("game-shell--cataclysm-shake");
+    void shell.offsetWidth;
+    shell.classList.add("game-shell--cataclysm-shake");
+    const onShakeEnd = () => {
+      shell.classList.remove("game-shell--cataclysm-shake");
+      shell.removeEventListener("animationend", onShakeEnd);
+    };
+    shell.addEventListener("animationend", onShakeEnd, { once: true });
+  } else if (container) {
     container.classList.remove("game-container--shake");
     void container.offsetWidth;
     container.classList.add("game-container--shake");
   }
 
   if (!flash) {
+    playExplosionSound();
     return;
   }
 
+  flash.classList.toggle("explosion-flash--cataclysm", cataclysm);
   flash.hidden = false;
   flash.setAttribute("aria-hidden", "false");
   flash.classList.remove("explosion-flash--active");
@@ -220,12 +246,32 @@ function triggerExplosionFx() {
   playExplosionSound();
 
   const cleanup = () => {
-    flash.classList.remove("explosion-flash--active");
+    flash.classList.remove("explosion-flash--active", "explosion-flash--cataclysm");
     flash.hidden = true;
     flash.setAttribute("aria-hidden", "true");
     flash.removeEventListener("animationend", cleanup);
   };
   flash.addEventListener("animationend", cleanup, { once: true });
+}
+
+function failBombDefusalGameOver(deathMessage) {
+  if (window.BombDefusalMinigame) {
+    BombDefusalMinigame.stop();
+  }
+  puzzleModalState.challengeType = null;
+
+  const deathLine = document.getElementById("game-over-death-msg");
+  if (deathLine) {
+    deathLine.textContent = deathMessage;
+  }
+  const subtitleEl = document.getElementById("game-over-subtitle");
+  if (subtitleEl) {
+    subtitleEl.textContent = MSG_GAME_OVER_SUBTITLE_COLLAPSE;
+  }
+
+  closePuzzleModal();
+  triggerExplosionFx({ cataclysm: true });
+  endGame();
 }
 
 function handleRoomEntry(row, col) {
@@ -324,6 +370,11 @@ function resetGame() {
     deathLine.textContent = "";
   }
 
+  const subtitleEl = document.getElementById("game-over-subtitle");
+  if (subtitleEl) {
+    subtitleEl.textContent = MSG_GAME_OVER_SUBTITLE_DEFAULT;
+  }
+
   const floorIndicator = document.getElementById("floor-indicator");
   floorIndicator.textContent = `Floor ${gameState.currentFloor}`;
 
@@ -382,6 +433,14 @@ function renderGrid() {
 
       if (roomData.type === ROOM_TYPES.STAIRS) {
         roomButton.classList.add("stairs");
+      }
+
+      if (
+        window.BombDefusalMinigame &&
+        row === BombDefusalMinigame.ROOM.row &&
+        col === BombDefusalMinigame.ROOM.col
+      ) {
+        roomButton.classList.add("room--bomb-site");
       }
 
       const centerButton = document.createElement("button");
@@ -553,6 +612,9 @@ function renderMcqChallenge(clearFeedback) {
   if (window.ArcheryMinigame) {
     ArcheryMinigame.stop();
   }
+  if (window.BombDefusalMinigame) {
+    BombDefusalMinigame.stop();
+  }
   puzzleModalState.challengeType = "mcq";
   setArcheryWrapVisible(false);
   setPuzzleModalArcheryMode(false);
@@ -566,6 +628,7 @@ function renderMcqChallenge(clearFeedback) {
   if (!questionEl || !optionsEl) {
     return;
   }
+  questionEl.style.whiteSpace = "";
   optionsEl.hidden = false;
   if (clearFeedback !== false && feedbackEl) {
     feedbackEl.textContent = "";
@@ -603,16 +666,20 @@ function renderArcheryChallenge(clearFeedback) {
     return;
   }
   ArcheryMinigame.stop();
+  if (window.BombDefusalMinigame) {
+    BombDefusalMinigame.stop();
+  }
   puzzleModalState.challengeType = "archery";
   setPuzzleModalArcheryMode(true);
   const titleEl = document.getElementById("puzzle-modal-title");
   if (titleEl) {
-    titleEl.textContent = "Door lock — archery trial";
+    titleEl.textContent = "Door lock — archery vs drone";
   }
   const questionEl = document.getElementById("puzzle-question");
   if (questionEl) {
+    questionEl.style.whiteSpace = "";
     questionEl.textContent =
-      "Outdoor range — only a 9 or 10 in the gold clears this lock. Details are on the sides.";
+      "A patrol drone weaves in the sky — only a 9 or 10 (center hit) clears this lock. How to shoot is on the left.";
   }
   const optionsEl = document.getElementById("puzzle-options");
   if (optionsEl) {
@@ -623,14 +690,6 @@ function renderArcheryChallenge(clearFeedback) {
     const feedbackEl = document.getElementById("puzzle-feedback");
     if (feedbackEl) {
       feedbackEl.textContent = "";
-    }
-    const archeryFb = document.getElementById("archery-feedback");
-    if (archeryFb) {
-      archeryFb.textContent = "";
-    }
-    const lastEl = document.getElementById("archery-last-score");
-    if (lastEl) {
-      lastEl.textContent = "";
     }
   }
   setArcheryWrapVisible(true);
@@ -649,27 +708,52 @@ function renderArcheryChallenge(clearFeedback) {
         }
         return;
       }
-      const lastEl = document.getElementById("archery-last-score");
-      if (lastEl) {
-        lastEl.textContent =
-          score <= 0
-            ? "Miss — adjust aim, draw length, and arc."
-            : `Ring ${score} — need 9 or 10 (gold center).`;
-      }
-      const archeryFb = document.getElementById("archery-feedback");
-      if (archeryFb) {
-        archeryFb.textContent =
-          "Try again — same lock until you score 9 or 10.";
+      const feedbackEl = document.getElementById("puzzle-feedback");
+      if (feedbackEl) {
+        feedbackEl.textContent = "Hit the drone.";
       }
     },
   });
 }
 
+function renderBombDefusalChallenge(clearFeedback) {
+  if (!window.BombDefusalMinigame) {
+    return;
+  }
+  puzzleModalState.challengeType = "bomb";
+  BombDefusalMinigame.render(clearFeedback, {
+    onSolved() {
+      const cb = puzzleModalState.onSolved;
+      closePuzzleModal();
+      if (typeof cb === "function") {
+        cb();
+      }
+    },
+    onWrongWire() {
+      failBombDefusalGameOver(MSG_BOMB_WRONG_WIRE);
+    },
+    onTimerExpired() {
+      failBombDefusalGameOver(MSG_BOMB_TIMER_DEATH);
+    },
+  });
+}
+
 function openPuzzleModal(onSolved) {
+  puzzleModalState.devPreview = false;
   puzzleModalState.onSolved = onSolved;
   puzzleModalState.puzzleRaw = null;
   puzzleModalState.currentDisplay = null;
   puzzleModalState.challengeType = null;
+  const { row, col } = gameState.playerPosition;
+  if (
+    window.BombDefusalMinigame &&
+    row === BombDefusalMinigame.ROOM.row &&
+    col === BombDefusalMinigame.ROOM.col
+  ) {
+    renderBombDefusalChallenge(true);
+    setPuzzleModalVisible(true);
+    return;
+  }
   const challenge = pickRandomChallenge();
   if (challenge.type === "archery") {
     renderArcheryChallenge(true);
@@ -691,6 +775,10 @@ function closePuzzleModal() {
   if (window.ArcheryMinigame) {
     ArcheryMinigame.stop();
   }
+  if (window.BombDefusalMinigame) {
+    BombDefusalMinigame.stop();
+  }
+  puzzleModalState.devPreview = false;
   puzzleModalState.onSolved = null;
   puzzleModalState.puzzleRaw = null;
   puzzleModalState.currentDisplay = null;
@@ -698,10 +786,6 @@ function closePuzzleModal() {
   const feedbackEl = document.getElementById("puzzle-feedback");
   if (feedbackEl) {
     feedbackEl.textContent = "";
-  }
-  const archeryFb = document.getElementById("archery-feedback");
-  if (archeryFb) {
-    archeryFb.textContent = "";
   }
   const optionsEl = document.getElementById("puzzle-options");
   if (optionsEl) {
@@ -713,6 +797,9 @@ function closePuzzleModal() {
 }
 
 function handlePuzzleChoice(chosenIndex) {
+  if (puzzleModalState.challengeType === "bomb") {
+    return;
+  }
   const display = puzzleModalState.currentDisplay;
   if (!display) {
     return;
@@ -744,8 +831,13 @@ function handlePuzzleChoice(chosenIndex) {
 
 function bindPuzzleControls() {
   document.getElementById("puzzle-cancel")?.addEventListener("click", () => {
+    const wasDevPreview = puzzleModalState.devPreview;
     closePuzzleModal();
-    showMessage("Lock challenge cancelled. Door stays shut.");
+    showMessage(
+      wasDevPreview
+        ? "Dev mini-game closed."
+        : "Lock challenge cancelled. Door stays shut."
+    );
   });
 
   document.addEventListener("keydown", (event) => {
@@ -755,9 +847,82 @@ function bindPuzzleControls() {
     }
     if (event.key === "Escape") {
       event.preventDefault();
+      const wasDevPreview = puzzleModalState.devPreview;
       closePuzzleModal();
-      showMessage("Lock challenge cancelled. Door stays shut.");
+      showMessage(
+        wasDevPreview
+          ? "Dev mini-game closed."
+          : "Lock challenge cancelled. Door stays shut."
+      );
     }
+  });
+}
+
+/**
+ * Open a lock mini-game from the dev panel. Does not tie to a door; on success the grid is unchanged.
+ * Add new entries in index.html (`data-dev-minigame`) and a branch here.
+ */
+function openDevMinigame(kind) {
+  const modal = document.getElementById("puzzle-modal");
+  if (modal && !modal.hidden) {
+    showMessage("Close the current challenge first.");
+    return;
+  }
+
+  puzzleModalState.devPreview = true;
+  puzzleModalState.onSolved = () => {
+    showMessage("Dev: mini-game completed (grid unchanged).");
+  };
+
+  if (kind === "archery") {
+    puzzleModalState.puzzleRaw = null;
+    puzzleModalState.currentDisplay = null;
+    puzzleModalState.challengeType = null;
+    renderArcheryChallenge(true);
+    setPuzzleModalVisible(true);
+    return;
+  }
+
+  if (kind === "mcq") {
+    puzzleModalState.puzzleRaw = pickRandomPuzzleRaw();
+    puzzleModalState.currentDisplay = null;
+    if (!puzzleModalState.puzzleRaw) {
+      puzzleModalState.devPreview = false;
+      puzzleModalState.onSolved = null;
+      showMessage("Dev: puzzle bank empty — cannot open quiz.");
+      return;
+    }
+    renderMcqChallenge(true);
+    setPuzzleModalVisible(true);
+    return;
+  }
+
+  if (kind === "bomb") {
+    if (!window.BombDefusalMinigame) {
+      puzzleModalState.devPreview = false;
+      puzzleModalState.onSolved = null;
+      showMessage("Dev: bomb defusal script missing — load bomb-defusal-minigame.js.");
+      return;
+    }
+    puzzleModalState.puzzleRaw = null;
+    puzzleModalState.currentDisplay = null;
+    puzzleModalState.challengeType = null;
+    renderBombDefusalChallenge(true);
+    setPuzzleModalVisible(true);
+    return;
+  }
+
+  puzzleModalState.devPreview = false;
+  puzzleModalState.onSolved = null;
+}
+
+function bindDevMinigamesPanel() {
+  document.getElementById("dev-minigames-panel")?.addEventListener("click", (event) => {
+    const btn = event.target.closest("[data-dev-minigame]");
+    if (!btn) {
+      return;
+    }
+    openDevMinigame(btn.getAttribute("data-dev-minigame"));
   });
 }
 
@@ -879,6 +1044,7 @@ function capitalize(value) {
 
 function initGame() {
   bindPuzzleControls();
+  bindDevMinigamesPanel();
   bindRestartControls();
   resetGame();
 }

@@ -1,23 +1,26 @@
 /**
- * Archery lock: bow lower-left. Pull from bow (direction + power), release — projectile with gravity.
- * Must score 9–10 (tight rings). On miss, player stays on archery until success.
+ * Archery lock: bow lower-left. Shoot a flying patrol drone (moving mark). Gravity on the arrow.
+ * Must score 9–10 (tight hit zone). On miss, player stays on archery until success.
  */
 window.ArcheryMinigame = (function archeryIife() {
   const SOUND_SWISH = "assets/sounds/arrow-swish.mp3";
   const SOUND_HIT = "assets/sounds/arrow-hitting-target.mp3";
+  const SOUND_BLAST = "assets/sounds/explosion-fx.mp3";
 
-  const W = 360;
-  const H = 400;
-  /** Tuned so a full draw toward the target reaches the face with arc */
-  const GRAVITY = 0.22;
-  const POWER_K = 0.198;
-  const MIN_PULL = 18;
-  const MAX_PULL = 168;
-  const MAX_FRAMES = 520;
-  const BOW_GRAB_R = 56;
+  /** Logical resolution — wide field (CSS + canvas buffer must match) */
+  const W = 1024;
+  const H = 576;
+  /** Tuned so a full draw can reach the far side with drone patrol */
+  const GRAVITY = 0.178;
+  const POWER_K = 0.56;
+  const MIN_PULL = 28;
+  const MAX_PULL = 318;
+  const MAX_FRAMES = 1100;
+  const BOW_GRAB_R = 82;
 
   let audioSwish = null;
   let audioHit = null;
+  let audioBlast = null;
 
   function getAudio(src) {
     try {
@@ -40,6 +43,17 @@ window.ArcheryMinigame = (function archeryIife() {
       }
       return;
     }
+    if (kind === "blast") {
+      if (!audioBlast) {
+        audioBlast = getAudio(SOUND_BLAST);
+      }
+      if (audioBlast) {
+        audioBlast.volume = 0.72;
+        audioBlast.currentTime = 0;
+        audioBlast.play().catch(() => {});
+      }
+      return;
+    }
     if (!audioHit) {
       audioHit = getAudio(SOUND_HIT);
     }
@@ -49,18 +63,24 @@ window.ArcheryMinigame = (function archeryIife() {
     }
   }
 
-  const BOW = { x: 44, y: H - 54 };
+  const GROUND_Y = H - 64;
+  const BOW = { x: 96, y: H - 82 };
   /** Limb tips: bowstring anchors (real thread) */
-  const BOW_TIP_TOP = { x: 78, y: H - 78 };
-  const BOW_TIP_BOT = { x: 78, y: H - 32 };
+  const BOW_TIP_TOP = { x: 176, y: H - 118 };
+  const BOW_TIP_BOT = { x: 176, y: H - 50 };
   /** Arrow leaves from nock (grip area) */
-  const LAUNCH = { x: 66, y: H - 66 };
-  const TARGET = { cx: 262, cy: 128, maxR: 72 };
+  const LAUNCH = { x: 150, y: H - 100 };
+  /** Hit radius for scoring (drone patrol uses full sky — see getDroneCenterWorld) */
+  const DRONE = { hitR: 90 };
 
   let canvas = null;
   let ctx = null;
   let dpr = 1;
   let rafId = 0;
+  let surfaceRafId = 0;
+  let blastRafId = 0;
+  /** @type {{ x: number, y: number, startMs: number, score: number } | null} */
+  let blastAnim = null;
   let animToken = 0;
   let phase = "idle";
   let callbacks = null;
@@ -85,37 +105,37 @@ window.ArcheryMinigame = (function archeryIife() {
     };
   }
 
-  /** Stricter rings: only inner ~14% of radius gives 9–10 */
+  /** 9–10 only for very tight groups near drone core (~3% / ~6.5% of hit radius) */
   function scoreFromDistance(d) {
-    if (d >= TARGET.maxR) {
+    if (d >= DRONE.hitR) {
       return 0;
     }
-    const u = d / TARGET.maxR;
-    if (u <= 0.065) {
+    const u = d / DRONE.hitR;
+    if (u <= 0.03) {
       return 10;
     }
-    if (u <= 0.135) {
+    if (u <= 0.065) {
       return 9;
     }
-    if (u <= 0.22) {
+    if (u <= 0.12) {
       return 8;
     }
-    if (u <= 0.32) {
+    if (u <= 0.2) {
       return 7;
     }
-    if (u <= 0.42) {
+    if (u <= 0.3) {
       return 6;
     }
-    if (u <= 0.52) {
+    if (u <= 0.4) {
       return 5;
     }
-    if (u <= 0.62) {
+    if (u <= 0.5) {
       return 4;
     }
-    if (u <= 0.72) {
+    if (u <= 0.6) {
       return 3;
     }
-    if (u <= 0.84) {
+    if (u <= 0.72) {
       return 2;
     }
     return 1;
@@ -125,6 +145,46 @@ window.ArcheryMinigame = (function archeryIife() {
     return Math.hypot(ax - bx, ay - by);
   }
 
+  /** Drone sweeps most of the sky — strong left/right and vertical weave. */
+  function getDroneCenterWorld(tMs) {
+    const t = tMs * 0.001;
+    const mx = 44;
+    const myTop = 56;
+    const myBot = GROUND_Y - 82;
+    const usableW = W - 2 * mx;
+    const usableH = myBot - myTop;
+    const sweep = 0.5 + 0.5 * Math.sin(t * 0.29 + 0.08);
+    let cx =
+      mx +
+      sweep * usableW +
+      62 * Math.sin(t * 0.76 + 0.35) +
+      48 * Math.sin(t * 1.33 + 1.05) +
+      34 * Math.sin(t * 0.45 + 1.2);
+    let cy =
+      myTop +
+      usableH *
+        (0.5 +
+          0.46 * Math.sin(t * 0.44 + 0.5) * Math.cos(t * 0.19 + 0.25)) +
+      36 * Math.sin(t * 1.02 + 0.15) +
+      22 * Math.cos(t * 0.68 + 0.9);
+    cy += 14 * Math.sin(t * 2.35 + 0.6) + 9 * Math.sin(t * 3.2 + 1.4);
+    const pad = DRONE.hitR * 0.55;
+    return {
+      cx: Math.max(mx + pad, Math.min(W - mx - pad, cx)),
+      cy: Math.max(myTop + pad * 0.35, Math.min(myBot - pad * 0.35, cy)),
+    };
+  }
+
+  /** Body roll for drawing (arc-second style sway). */
+  function getDroneRollRad(tMs) {
+    const t = tMs * 0.001;
+    return (
+      0.1 * Math.sin(t * 1.15 + 0.2) +
+      0.055 * Math.sin(t * 2.33 + 0.85) +
+      0.03 * Math.sin(t * 3.5 + 1.2)
+    );
+  }
+
   function drawBackdrop() {
     const sky = ctx.createLinearGradient(0, 0, 0, H * 0.72);
     sky.addColorStop(0, "#87a8d8");
@@ -132,14 +192,14 @@ window.ArcheryMinigame = (function archeryIife() {
     sky.addColorStop(0.65, "#3d4a66");
     sky.addColorStop(1, "#252d3d");
     ctx.fillStyle = sky;
-    ctx.fillRect(0, 0, W, H - 44);
+    ctx.fillRect(0, 0, W, GROUND_Y);
     const sun = ctx.createRadialGradient(W * 0.78, H * 0.12, 0, W * 0.78, H * 0.12, H * 0.35);
     sun.addColorStop(0, "rgba(255, 248, 220, 0.45)");
     sun.addColorStop(0.45, "rgba(255, 220, 160, 0.08)");
     sun.addColorStop(1, "rgba(255, 220, 160, 0)");
     ctx.fillStyle = sun;
-    ctx.fillRect(0, 0, W, H - 44);
-    const hill = H - 44;
+    ctx.fillRect(0, 0, W, GROUND_Y);
+    const hill = GROUND_Y;
     ctx.fillStyle = "#1e2638";
     ctx.beginPath();
     ctx.moveTo(0, hill - 2);
@@ -154,13 +214,13 @@ window.ArcheryMinigame = (function archeryIife() {
   }
 
   function drawGround() {
-    const gy = H - 44;
-    const g = ctx.createLinearGradient(0, gy, 0, H);
+    const gh = H - GROUND_Y;
+    const g = ctx.createLinearGradient(0, GROUND_Y, 0, H);
     g.addColorStop(0, "#2d4a32");
     g.addColorStop(0.45, "#243828");
     g.addColorStop(1, "#1a281c");
     ctx.fillStyle = g;
-    ctx.fillRect(0, gy, W, 44);
+    ctx.fillRect(0, GROUND_Y, W, gh);
     ctx.strokeStyle = "rgba(45, 75, 48, 0.5)";
     ctx.lineWidth = 1;
     for (let i = 0; i < 42; i += 1) {
@@ -177,101 +237,85 @@ window.ArcheryMinigame = (function archeryIife() {
     ctx.fillRect(0, H - 8, W, 8);
   }
 
-  function drawTargetStandAndBale() {
-    const { cx, cy, maxR } = TARGET;
-    const footY = H - 44;
-    const faceBottom = cy + maxR;
-    const postBot = Math.min(footY - 6, faceBottom + 62);
+  function drawDroneGroundShadow(nowMs) {
+    const c = getDroneCenterWorld(nowMs);
+    ctx.fillStyle = "rgba(15, 18, 28, 0.2)";
+    ctx.beginPath();
+    ctx.ellipse(c.cx, GROUND_Y - 2, 32, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  function drawDrone(nowMs) {
+    drawDroneGroundShadow(nowMs);
+    const c = getDroneCenterWorld(nowMs);
+    const roll = getDroneRollRad(nowMs);
+    const propPhase = (nowMs * 0.055) % (Math.PI * 2);
+    const spark = 0.22 + 0.18 * Math.sin(nowMs * 0.012);
 
     ctx.save();
-    ctx.fillStyle = "rgba(15, 18, 28, 0.22)";
-    ctx.beginPath();
-    ctx.ellipse(cx, footY - 2, maxR * 1.15, 10, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+    ctx.translate(c.cx, c.cy);
+    ctx.rotate(roll);
 
-    ctx.strokeStyle = "#4a4540";
-    ctx.lineWidth = 4;
+    const armLen = 50;
+    const armA = Math.PI / 4;
+    ctx.strokeStyle = "#4a5568";
+    ctx.lineWidth = 5;
     ctx.lineCap = "round";
-    ctx.beginPath();
-    ctx.moveTo(cx, faceBottom + 4);
-    ctx.lineTo(cx, postBot);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(cx - 18, faceBottom + 10);
-    ctx.lineTo(cx - 32, postBot + 4);
-    ctx.moveTo(cx + 18, faceBottom + 10);
-    ctx.lineTo(cx + 32, postBot + 4);
-    ctx.stroke();
-
-    const bw = maxR * 2 + 28;
-    const bh = maxR * 2 + 36;
-    const bx = cx - bw / 2;
-    const by = cy - maxR - 14;
-    const br = 6;
-    ctx.fillStyle = "#2a3830";
-    ctx.beginPath();
-    ctx.moveTo(bx + br, by);
-    ctx.lineTo(bx + bw - br, by);
-    ctx.quadraticCurveTo(bx + bw, by, bx + bw, by + br);
-    ctx.lineTo(bx + bw, by + bh - br);
-    ctx.quadraticCurveTo(bx + bw, by + bh, bx + bw - br, by + bh);
-    ctx.lineTo(bx + br, by + bh);
-    ctx.quadraticCurveTo(bx, by + bh, bx, by + bh - br);
-    ctx.lineTo(bx, by + br);
-    ctx.quadraticCurveTo(bx, by, bx + br, by);
-    ctx.closePath();
-    ctx.fill();
-    const foam = ctx.createLinearGradient(bx, by, bx + bw, by + bh);
-    foam.addColorStop(0, "#3d5248");
-    foam.addColorStop(1, "#1e2a24");
-    ctx.fillStyle = foam;
-    ctx.fillRect(bx + 3, by + 3, bw - 6, bh - 6);
-    ctx.strokeStyle = "rgba(0,0,0,0.35)";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(bx + 2, by + 2, bw - 4, bh - 4);
-  }
-
-  function drawTargetFace() {
-    const { cx, cy, maxR } = TARGET;
-    const colors = [
-      "#f5f0e8",
-      "#c4dcf0",
-      "#7eb8e8",
-      "#3d7a3d",
-      "#f0c830",
-      "#e8a820",
-      "#d04020",
-      "#a01818",
-      "#1a1a1a",
-      "#ffd700",
-    ];
-    ctx.fillStyle = "rgba(250, 248, 242, 0.95)";
-    ctx.beginPath();
-    ctx.arc(cx, cy, maxR + 3, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = "rgba(40, 40, 40, 0.5)";
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-    for (let s = 10; s >= 1; s -= 1) {
-      const r = (s / 10) * maxR;
+    for (let i = 0; i < 4; i += 1) {
+      const a = armA + (i * Math.PI) / 2;
       ctx.beginPath();
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.fillStyle = colors[(10 - s) % colors.length];
-      ctx.fill();
-      ctx.strokeStyle = "rgba(0,0,0,0.22)";
-      ctx.lineWidth = s === 1 ? 1.2 : 0.85;
+      ctx.moveTo(Math.cos(a) * 10, Math.sin(a) * 10);
+      ctx.lineTo(Math.cos(a) * armLen, Math.sin(a) * armLen);
       ctx.stroke();
     }
-    ctx.fillStyle = "rgba(30, 28, 26, 0.92)";
-    ctx.font = "bold 10px Segoe UI, sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText("10", cx, cy + 3);
-  }
 
-  function drawTarget() {
-    drawTargetStandAndBale();
-    drawTargetFace();
+    for (let i = 0; i < 4; i += 1) {
+      const a = armA + (i * Math.PI) / 2;
+      const rx = Math.cos(a) * armLen;
+      const ry = Math.sin(a) * armLen;
+      ctx.fillStyle = "rgba(130, 155, 185, " + (0.2 + spark * 0.35) + ")";
+      ctx.beginPath();
+      ctx.ellipse(rx, ry, 19, 6, a + propPhase, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(55, 68, 88, 0.75)";
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      ctx.strokeStyle = "rgba(200, 220, 245, " + (0.15 + spark * 0.25) + ")";
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.moveTo(rx - 15 * Math.cos(propPhase), ry - 15 * Math.sin(propPhase));
+      ctx.lineTo(rx + 15 * Math.cos(propPhase), ry + 15 * Math.sin(propPhase));
+      ctx.stroke();
+    }
+
+    const body = ctx.createRadialGradient(-6, -8, 2, 0, 2, 24);
+    body.addColorStop(0, "#4a566e");
+    body.addColorStop(0.55, "#2d3548");
+    body.addColorStop(1, "#1a2030");
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.ellipse(0, 2, 24, 15, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#121820";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    ctx.fillStyle = "rgba(90, 185, 220, 0.55)";
+    ctx.beginPath();
+    ctx.arc(-7, -1, 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(40, 100, 130, 0.5)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.fillStyle = "#00c9a0";
+    ctx.fillRect(-12, 9, 5, 3);
+    ctx.fillStyle = "#e84830";
+    ctx.fillRect(7, 9, 5, 3);
+    ctx.fillStyle = "rgba(255,255,255,0.06)";
+    ctx.fillRect(-18, -2, 36, 3);
+
+    ctx.restore();
   }
 
   function drawBowSlackString() {
@@ -495,7 +539,7 @@ window.ArcheryMinigame = (function archeryIife() {
       vy += GRAVITY;
       vx *= 0.9995;
       ctx.lineTo(px, py);
-      if (py > H - 40 || px > W + 30) {
+      if (py > GROUND_Y + 12 || px > W + 48) {
         break;
       }
     }
@@ -514,7 +558,7 @@ window.ArcheryMinigame = (function archeryIife() {
     ctx.clearRect(0, 0, W, H);
     drawBackdrop();
     drawGround();
-    drawTarget();
+    drawDrone(performance.now());
     drawBowLimbs();
     drawBowSlackString();
     const speed = Math.hypot(vx, vy) || 0.001;
@@ -533,7 +577,7 @@ window.ArcheryMinigame = (function archeryIife() {
     ctx.clearRect(0, 0, W, H);
     drawBackdrop();
     drawGround();
-    drawTarget();
+    drawDrone(performance.now());
     drawBowLimbs();
     if (aimActive) {
       const dx = pullX - LAUNCH.x;
@@ -544,7 +588,7 @@ window.ArcheryMinigame = (function archeryIife() {
     } else {
       drawBowSlackString();
     }
-    if (showImpact && phase === "idle") {
+    if (showImpact && phase === "idle" && !blastAnim) {
       ctx.fillStyle = "rgba(255, 120, 80, 0.38)";
       ctx.beginPath();
       ctx.arc(showImpact.x, showImpact.y, 8, 0, Math.PI * 2);
@@ -563,6 +607,137 @@ window.ArcheryMinigame = (function archeryIife() {
     }
   }
 
+  function tickSurface() {
+    surfaceRafId = 0;
+    if (!canvas || !ctx || phase !== "idle") {
+      return;
+    }
+    fullRedrawIdle();
+    surfaceRafId = requestAnimationFrame(tickSurface);
+  }
+
+  function resumeIdleSurfaceLoop() {
+    if (!canvas || !ctx || phase !== "idle" || surfaceRafId) {
+      return;
+    }
+    surfaceRafId = requestAnimationFrame(tickSurface);
+  }
+
+  const BLAST_DURATION_MS = 940;
+
+  function drawDroneBlastFrame(elapsed) {
+    if (!blastAnim || !ctx) {
+      return;
+    }
+    const { x, y, startMs } = blastAnim;
+    const u = Math.min(1, elapsed / BLAST_DURATION_MS);
+    ctx.clearRect(0, 0, W, H);
+    drawBackdrop();
+    drawGround();
+    drawBowLimbs();
+    drawBowSlackString();
+
+    ctx.fillStyle = "rgba(255, 238, 210, " + 0.32 * (1 - u * 1.1) + ")";
+    ctx.fillRect(0, 0, W, H);
+
+    for (let ring = 0; ring < 4; ring += 1) {
+      const r = (26 + ring * 30) * (0.12 + u * 1.38);
+      const a = Math.max(0, 0.52 - u * 0.58 - ring * 0.09);
+      ctx.strokeStyle = "rgba(255, 195, 90, " + a + ")";
+      ctx.lineWidth = 3.2 - ring * 0.45;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    const coreR = 18 + u * 135;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, coreR);
+    g.addColorStop(0, "rgba(255, 255, 255, " + 0.92 * (1 - u) + ")");
+    g.addColorStop(0.22, "rgba(255, 210, 100, " + 0.82 * (1 - u * 0.95) + ")");
+    g.addColorStop(0.5, "rgba(255, 85, 35, " + 0.58 * (1 - u * 0.88) + ")");
+    g.addColorStop(1, "rgba(35, 18, 50, 0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, coreR, 0, Math.PI * 2);
+    ctx.fill();
+
+    const n = 24;
+    for (let i = 0; i < n; i += 1) {
+      const ang = (i / n) * Math.PI * 2 + startMs * 0.00065;
+      const spd = 48 + (i % 7) * 20;
+      const dist = spd * u * (0.82 + 0.18 * Math.sin(i * 1.6));
+      const px = x + Math.cos(ang) * dist;
+      const py = y + Math.sin(ang) * dist - u * u * 40;
+      const pa = Math.max(0, 1 - u * 1.08);
+      const hue = i % 3;
+      ctx.fillStyle =
+        hue === 0
+          ? "rgba(255,225,130," + pa + ")"
+          : hue === 1
+            ? "rgba(255,100,45," + pa + ")"
+            : "rgba(85,90,105," + pa + ")";
+      ctx.beginPath();
+      ctx.arc(px, py, 2.2 + (i % 5) * 0.55, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    for (let j = 0; j < 9; j += 1) {
+      const ang2 = j * 0.74 + startMs * 0.0009;
+      const dist2 = 18 + u * 52 + j * 7;
+      const px2 = x + Math.cos(ang2) * dist2 * 0.62;
+      const py2 = y + Math.sin(ang2) * dist2 * 0.48 - u * 28;
+      const ps = Math.max(0, 0.38 - u * 0.42);
+      ctx.fillStyle = "rgba(65, 68, 82, " + ps + ")";
+      ctx.beginPath();
+      ctx.arc(px2, py2, 10 + j + u * 18, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function runBlastAnimation(bx, by, score) {
+    if (blastRafId) {
+      cancelAnimationFrame(blastRafId);
+      blastRafId = 0;
+    }
+    if (surfaceRafId) {
+      cancelAnimationFrame(surfaceRafId);
+      surfaceRafId = 0;
+    }
+    blastAnim = { x: bx, y: by, startMs: performance.now(), score };
+    phase = "blasting";
+    play("hit");
+    play("blast");
+
+    function blastStep() {
+      if (!canvas || !ctx || phase !== "blasting" || !blastAnim) {
+        blastRafId = 0;
+        return;
+      }
+      const elapsed = performance.now() - blastAnim.startMs;
+      if (elapsed >= BLAST_DURATION_MS) {
+        const finalScore = blastAnim.score;
+        const ix = blastAnim.x;
+        const iy = blastAnim.y;
+        const onShotFn = callbacks ? callbacks.onShot : null;
+        blastAnim = null;
+        blastRafId = 0;
+        phase = "idle";
+        showImpact = { x: ix, y: iy };
+        if (onShotFn) {
+          onShotFn(finalScore);
+        }
+        if (canvas && ctx) {
+          fullRedrawIdle();
+          resumeIdleSurfaceLoop();
+        }
+        return;
+      }
+      drawDroneBlastFrame(elapsed);
+      blastRafId = requestAnimationFrame(blastStep);
+    }
+    blastRafId = requestAnimationFrame(blastStep);
+  }
+
   function runFlight(vx0, vy0) {
     const token = ++animToken;
     let x = LAUNCH.x;
@@ -578,14 +753,8 @@ window.ArcheryMinigame = (function archeryIife() {
     phase = "flying";
 
     function finalizeHit() {
-      phase = "idle";
       const score = scoreFromDistance(bestD);
-      play("hit");
-      showImpact = { x: bestX, y: bestY };
-      fullRedrawIdle();
-      if (callbacks && callbacks.onShot) {
-        callbacks.onShot(score);
-      }
+      runBlastAnimation(bestX, bestY, score);
     }
 
     function step() {
@@ -594,14 +763,17 @@ window.ArcheryMinigame = (function archeryIife() {
       }
       frames += 1;
       const SUB = 8;
-      const inR = TARGET.maxR * 1.01;
+      const inR = DRONE.hitR * 1.01;
+      const tFrame = performance.now();
       for (let sub = 0; sub < SUB; sub += 1) {
         x += vx / SUB;
         y += vy / SUB;
         vy += GRAVITY / SUB;
         vx *= Math.pow(0.9993, 1 / SUB);
 
-        const dTarget = dist(x, y, TARGET.cx, TARGET.cy);
+        const tw = tFrame + (sub / SUB) * 12;
+        const tc = getDroneCenterWorld(tw);
+        const dTarget = dist(x, y, tc.cx, tc.cy);
         const inZone = dTarget <= inR;
 
         if (inZone) {
@@ -617,19 +789,20 @@ window.ArcheryMinigame = (function archeryIife() {
         }
       }
 
-      if (y > H - 38 || x > W + 25 || x < -30 || frames > MAX_FRAMES) {
+      if (y > GROUND_Y + 18 || x > W + 40 || x < -48 || frames > MAX_FRAMES) {
         phase = "idle";
         if (insideTarget && bestD < Infinity) {
           finalizeHit();
         } else {
           showImpact = {
-            x: Math.max(10, Math.min(W - 10, x)),
-            y: Math.min(H - 36, y),
+            x: Math.max(12, Math.min(W - 12, x)),
+            y: Math.min(GROUND_Y + 28, y),
           };
           fullRedrawIdle();
           if (callbacks && callbacks.onShot) {
             callbacks.onShot(0);
           }
+          resumeIdleSurfaceLoop();
         }
         return;
       }
@@ -647,7 +820,7 @@ window.ArcheryMinigame = (function archeryIife() {
     const p = canvasToLogical(e.clientX, e.clientY);
     const nearGrip =
       dist(p.x, p.y, BOW.x, BOW.y) <= BOW_GRAB_R ||
-      dist(p.x, p.y, LAUNCH.x, LAUNCH.y) <= 52;
+      dist(p.x, p.y, LAUNCH.x, LAUNCH.y) <= 92;
     if (!nearGrip) {
       return;
     }
@@ -711,6 +884,7 @@ window.ArcheryMinigame = (function archeryIife() {
       aimActive = false;
       pointerId = null;
       fullRedrawIdle();
+      resumeIdleSurfaceLoop();
     }
   }
 
@@ -745,10 +919,12 @@ window.ArcheryMinigame = (function archeryIife() {
         aimActive = false;
         pointerId = null;
         fullRedrawIdle();
+        resumeIdleSurfaceLoop();
       };
       canvas.addEventListener("pointerleave", leaveHandler);
 
       fullRedrawIdle();
+      resumeIdleSurfaceLoop();
     },
 
     stop() {
@@ -756,6 +932,15 @@ window.ArcheryMinigame = (function archeryIife() {
       if (rafId) {
         cancelAnimationFrame(rafId);
         rafId = 0;
+      }
+      if (blastRafId) {
+        cancelAnimationFrame(blastRafId);
+        blastRafId = 0;
+      }
+      blastAnim = null;
+      if (surfaceRafId) {
+        cancelAnimationFrame(surfaceRafId);
+        surfaceRafId = 0;
       }
       aimActive = false;
       pointerId = null;
