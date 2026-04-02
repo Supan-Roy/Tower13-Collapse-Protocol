@@ -1,6 +1,6 @@
 /**
  * Archery lock: bow lower-left. Shoot a flying patrol drone (moving mark). Gravity on the arrow.
- * Must score 9–10 (tight hit zone). On miss, player stays on archery until success.
+ * Only the main egg-shaped drone body clears the lock.
  */
 window.ArcheryMinigame = (function archeryIife() {
   const SOUND_SWISH = "assets/sounds/arrow-swish.mp3";
@@ -71,7 +71,17 @@ window.ArcheryMinigame = (function archeryIife() {
   /** Arrow leaves from nock (grip area) */
   const LAUNCH = { x: 150, y: H - 100 };
   /** Hit radius for scoring (drone patrol uses full sky — see getDroneCenterWorld) */
-  const DRONE = { hitR: 90 };
+  const DRONE = { hitR: 78 };
+  /** >1 speeds up patrol / weave (harder to lead shots). */
+  const DRONE_MOTION_SCALE = 1.7;
+  /**
+   * "Egg" body hit zone (success).
+   * drawDrone() renders the main body as ellipse(0, 2, 24, 15) after translate(cx, cy),
+   * so the core center is (cx, cy + 2).
+   */
+  const DRONE_CORE = { rx: 24, ry: 15, yOff: 2 };
+  // Allow a little tolerance so "egg body" matches the drawn ellipse.
+  const EGG_HIT_U = 1.15;
 
   let canvas = null;
   let ctx = null;
@@ -105,16 +115,16 @@ window.ArcheryMinigame = (function archeryIife() {
     };
   }
 
-  /** 9–10 only for very tight groups near drone core (~3% / ~6.5% of hit radius) */
+  /** Legacy distance-based scoring helper (core hit now uses a rotated ellipse). */
   function scoreFromDistance(d) {
     if (d >= DRONE.hitR) {
       return 0;
     }
     const u = d / DRONE.hitR;
-    if (u <= 0.03) {
+    if (u <= 0.025) {
       return 10;
     }
-    if (u <= 0.065) {
+    if (u <= 0.05) {
       return 9;
     }
     if (u <= 0.12) {
@@ -147,7 +157,7 @@ window.ArcheryMinigame = (function archeryIife() {
 
   /** Drone sweeps most of the sky — strong left/right and vertical weave. */
   function getDroneCenterWorld(tMs) {
-    const t = tMs * 0.001;
+    const t = tMs * 0.001 * DRONE_MOTION_SCALE;
     const mx = 44;
     const myTop = 56;
     const myBot = GROUND_Y - 82;
@@ -177,7 +187,7 @@ window.ArcheryMinigame = (function archeryIife() {
 
   /** Body roll for drawing (arc-second style sway). */
   function getDroneRollRad(tMs) {
-    const t = tMs * 0.001;
+    const t = tMs * 0.001 * DRONE_MOTION_SCALE;
     return (
       0.1 * Math.sin(t * 1.15 + 0.2) +
       0.055 * Math.sin(t * 2.33 + 0.85) +
@@ -249,8 +259,8 @@ window.ArcheryMinigame = (function archeryIife() {
     drawDroneGroundShadow(nowMs);
     const c = getDroneCenterWorld(nowMs);
     const roll = getDroneRollRad(nowMs);
-    const propPhase = (nowMs * 0.055) % (Math.PI * 2);
-    const spark = 0.22 + 0.18 * Math.sin(nowMs * 0.012);
+    const propPhase = (nowMs * 0.055 * DRONE_MOTION_SCALE) % (Math.PI * 2);
+    const spark = 0.22 + 0.18 * Math.sin(nowMs * 0.012 * DRONE_MOTION_SCALE);
 
     ctx.save();
     ctx.translate(c.cx, c.cy);
@@ -715,18 +725,27 @@ window.ArcheryMinigame = (function archeryIife() {
       }
       const elapsed = performance.now() - blastAnim.startMs;
       if (elapsed >= BLAST_DURATION_MS) {
-        const finalScore = blastAnim.score;
+        const finalScore = 10;
         const ix = blastAnim.x;
         const iy = blastAnim.y;
-        const onShotFn = callbacks ? callbacks.onShot : null;
+        const onShotFn = callbacks && callbacks.onShot ? callbacks.onShot : null;
         blastAnim = null;
         blastRafId = 0;
         phase = "idle";
         showImpact = { x: ix, y: iy };
         if (onShotFn) {
-          onShotFn(finalScore);
-        }
-        if (canvas && ctx) {
+          // Aggressive: treat the blast as a successful exit.
+          try {
+            onShotFn(finalScore);
+          } catch {
+            // ignore
+          }
+          // If the host closes/stops the minigame, callbacks will be cleared.
+          if (canvas && ctx && callbacks) {
+            fullRedrawIdle();
+            resumeIdleSurfaceLoop();
+          }
+        } else if (canvas && ctx) {
           fullRedrawIdle();
           resumeIdleSurfaceLoop();
         }
@@ -747,14 +766,14 @@ window.ArcheryMinigame = (function archeryIife() {
     let frames = 0;
     /** First frame inside the face is always near the rim; track closest approach to center instead */
     let insideTarget = false;
-    let bestD = Infinity;
+    let bestCoreU = Infinity;
     let bestX = LAUNCH.x;
     let bestY = LAUNCH.y;
     phase = "flying";
 
     function finalizeHit() {
-      const score = scoreFromDistance(bestD);
-      runBlastAnimation(bestX, bestY, score);
+      // Blast is the success state (door should close immediately after).
+      runBlastAnimation(bestX, bestY, 10);
     }
 
     function step() {
@@ -763,7 +782,6 @@ window.ArcheryMinigame = (function archeryIife() {
       }
       frames += 1;
       const SUB = 8;
-      const inR = DRONE.hitR * 1.01;
       const tFrame = performance.now();
       for (let sub = 0; sub < SUB; sub += 1) {
         x += vx / SUB;
@@ -773,13 +791,26 @@ window.ArcheryMinigame = (function archeryIife() {
 
         const tw = tFrame + (sub / SUB) * 12;
         const tc = getDroneCenterWorld(tw);
-        const dTarget = dist(x, y, tc.cx, tc.cy);
-        const inZone = dTarget <= inR;
+        // Convert world point into drone-local space (drone is rotated via getDroneRollRad()).
+        // drawDrone() renders the main body as ellipse(0, 2, 24, 15, 0..).
+        const roll = getDroneRollRad(tw);
+        const dx = x - tc.cx;
+        const dy = y - tc.cy;
+        const cos = Math.cos(roll);
+        const sin = Math.sin(roll);
+        const localX = dx * cos + dy * sin;
+        const localY = -dx * sin + dy * cos;
+        const coreDx = localX; // ellipse center x is 0 in local space
+        const coreDy = localY - DRONE_CORE.yOff; // ellipse center y is 2 in local space
+        const coreU =
+          (coreDx * coreDx) / (DRONE_CORE.rx * DRONE_CORE.rx) +
+          (coreDy * coreDy) / (DRONE_CORE.ry * DRONE_CORE.ry);
+        const inZone = coreU <= EGG_HIT_U;
 
         if (inZone) {
           insideTarget = true;
-          if (dTarget < bestD) {
-            bestD = dTarget;
+          if (coreU < bestCoreU) {
+            bestCoreU = coreU;
             bestX = x;
             bestY = y;
           }
@@ -791,7 +822,7 @@ window.ArcheryMinigame = (function archeryIife() {
 
       if (y > GROUND_Y + 18 || x > W + 40 || x < -48 || frames > MAX_FRAMES) {
         phase = "idle";
-        if (insideTarget && bestD < Infinity) {
+        if (insideTarget && bestCoreU < Infinity) {
           finalizeHit();
         } else {
           showImpact = {

@@ -28,12 +28,12 @@
 
       <section class="grid-panel" aria-label="Room grid">
         <div id="room-grid" class="room-grid" role="grid" aria-label="3 by 3 room grid"></div>
-        <p class="grid-help">Room 1,3: timed bomb defusal. Other door locks: random MCQ or archery (score 9–10). Each doorway clears once solved.</p>
+        <p class="grid-help">Room 1,2: mnemonic lock (10 s view, 15 s match). Room 1,3: bomb defusal. Elsewhere: random quiz or archery. Each doorway clears once solved.</p>
       </section>
 
       <section class="info-panel" aria-live="polite" aria-label="Game information">
         <h2>System Log</h2>
-        <p id="info-message" class="info-message">Room 1,3 is a bomb defusal (60s, three wires). Elsewhere: random quiz or archery — score 9–10 on the drone to clear.</p>
+        <p id="info-message" class="info-message">Room 1,2: 10 seconds to view the words, 15 seconds to match them in order (three tries). Room 1,3: bomb defusal. Elsewhere: quiz or archery.</p>
       </section>
 
       <section class="inventory-bar" aria-label="Inventory">
@@ -56,6 +56,9 @@
         <li>
           <button type="button" class="dev-minigames-panel__btn" data-dev-minigame="bomb">Bomb defusal</button>
         </li>
+        <li>
+          <button type="button" class="dev-minigames-panel__btn" data-dev-minigame="memory">Mnemonic words</button>
+        </li>
       </ul>
     </aside>
 
@@ -69,7 +72,7 @@
           <aside class="puzzle-archery__aside puzzle-archery__aside--left" aria-label="How to shoot">
             <span class="puzzle-archery__label">Instructions</span>
             <p class="puzzle-archery__hint">
-              Press and hold <strong>on the bow</strong> (lower-left). Drag away to <strong>aim</strong> and <strong>draw</strong> — longer pull = more speed. <strong>Release</strong> to loose. The patrol <strong>drone</strong> moves in the sky; lead your shot and use the green arc. Only score <strong>9–10</strong> (dead-center hit) clears the lock.
+              Press and hold <strong>on the bow</strong> (lower-left). Drag away to <strong>aim</strong> and <strong>draw</strong> — longer pull = more speed. <strong>Release</strong> to loose. The patrol <strong>drone</strong> moves in the sky; lead your shot and use the green arc. Only the main egg body clears the lock.
             </p>
           </aside>
           <div class="puzzle-archery__canvas-shell">
@@ -157,6 +160,33 @@
             <p id="bomb-hint-panel" class="bomb-hint-panel" hidden role="status" aria-live="polite"></p>
           </div>
         </div>
+        <div id="puzzle-memory-wrap" class="puzzle-memory-wrap" hidden>
+          <div id="memory-phase-memorize" class="memory-phase memory-phase--memorize">
+            <div class="memory-memorize__veil" aria-hidden="true"></div>
+            <p class="memory-memorize__kicker">PHASE 1 · MEMORIZE</p>
+            <div id="memory-sequence-display" class="memory-sequence-display"></div>
+            <div class="memory-memorize__countdown-wrap">
+              <span id="memory-countdown" class="memory-countdown" role="timer" aria-live="polite">10</span>
+              <span class="memory-countdown__suffix">seconds</span>
+            </div>
+          </div>
+          <div id="memory-phase-recall" class="memory-phase memory-phase--recall" hidden>
+            <div class="memory-recall__hud">
+              <span class="memory-recall__badge memory-recall__badge--attempts">
+                Attempts <strong id="memory-attempts-left">3</strong> / 3
+              </span>
+              <span class="memory-recall__badge memory-recall__badge--step">
+                Step <strong id="memory-step-num">1</strong> / 7
+              </span>
+              <span class="memory-recall__badge memory-recall__badge--timer">
+                Match <strong id="memory-recall-countdown">15</strong> s
+              </span>
+            </div>
+            <p class="memory-recall__instr">Tap the seven words in order — 15 seconds to complete matching.</p>
+            <div id="memory-word-cloud" class="memory-word-cloud"></div>
+            <div id="memory-progress-dots" class="memory-progress-dots" aria-hidden="true"></div>
+          </div>
+        </div>
         <div id="puzzle-options" class="puzzle-modal__options"></div>
         <p id="puzzle-feedback" class="puzzle-modal__feedback" aria-live="polite"></p>
         <button type="button" id="puzzle-cancel" class="restart-button">Cancel</button>
@@ -178,6 +208,7 @@
   <script src="puzzle-bank.js"></script>
   <script src="archery-minigame.js"></script>
   <script src="bomb-defusal-minigame.js"></script>
+  <script src="memory-word-minigame.js"></script>
   <script src="script.js"></script>
 </body>
 </html>

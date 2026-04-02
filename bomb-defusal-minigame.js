@@ -352,6 +352,9 @@ window.BombDefusalMinigame = (function bombDefusalIife() {
       if (window.ArcheryMinigame) {
         ArcheryMinigame.stop();
       }
+      if (window.MemoryWordMinigame) {
+        MemoryWordMinigame.stop();
+      }
       clearSuccessExitTimer();
       stopTimer();
       setWireButtonsDisabled(false);

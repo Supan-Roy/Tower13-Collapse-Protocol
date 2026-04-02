@@ -15,11 +15,13 @@ const MSG_BOMB_WRONG_WIRE =
   "Wrong wire. The collapse charge blows — shock rips through the floor and the tower starts to go.";
 const MSG_BOMB_TIMER_DEATH =
   "The clock hits zero. The charge detonates; the whole structure buckles around you.";
+const MSG_MEMORY_FAIL =
+  "The mnemonic lock rejects your sequence. The failsafe blows — shock rips through the floor and the tower starts to go.";
 const MSG_GAME_OVER_SUBTITLE_DEFAULT = "You ignored the warning signs nearby.";
 const MSG_GAME_OVER_SUBTITLE_COLLAPSE =
   "Tower 13 shears apart — floors pancake and the collapse protocol claims the building.";
 const MSG_TUTORIAL =
-  "Stand in a room and open a door — room 1,3 is a timed bomb defusal; other locks are random quiz or archery vs a drone (score 9–10). Cleared locks stay open for that passage.";
+  "Stand in a room and open a door — room 1,2 is a mnemonic lock (10 seconds to view the words, 15 seconds to match them in order each try); room 1,3 is bomb defusal; elsewhere locks are random quiz or archery (hit the main drone body). Cleared locks stay open for that passage.";
 
 const EXPLOSION_SOUND_SRC = "assets/sounds/explosion-fx.mp3";
 
@@ -47,7 +49,7 @@ const puzzleModalState = {
   puzzleRaw: null,
   /** Fresh shuffle on each render — options order + correctIndex for current buttons */
   currentDisplay: null,
-  /** "mcq" | "archery" | "bomb" */
+  /** "mcq" | "archery" | "bomb" | "memory" */
   challengeType: null,
   /** True when the modal was opened from the dev side panel (not a real door lock) */
   devPreview: false,
@@ -215,17 +217,16 @@ function triggerExplosionFx(options = {}) {
   const cataclysm = Boolean(options.cataclysm);
   const flash = document.getElementById("explosion-flash");
   const container = document.querySelector(".game-container");
-  const shell = document.querySelector(".game-shell");
-
-  if (cataclysm && shell) {
-    shell.classList.remove("game-shell--cataclysm-shake");
-    void shell.offsetWidth;
-    shell.classList.add("game-shell--cataclysm-shake");
+  if (cataclysm) {
+    const bodyEl = document.body;
+    bodyEl.classList.remove("body--cataclysm-shake");
+    void bodyEl.offsetWidth;
+    bodyEl.classList.add("body--cataclysm-shake");
     const onShakeEnd = () => {
-      shell.classList.remove("game-shell--cataclysm-shake");
-      shell.removeEventListener("animationend", onShakeEnd);
+      bodyEl.classList.remove("body--cataclysm-shake");
+      bodyEl.removeEventListener("animationend", onShakeEnd);
     };
-    shell.addEventListener("animationend", onShakeEnd, { once: true });
+    bodyEl.addEventListener("animationend", onShakeEnd, { once: true });
   } else if (container) {
     container.classList.remove("game-container--shake");
     void container.offsetWidth;
@@ -252,6 +253,26 @@ function triggerExplosionFx(options = {}) {
     flash.removeEventListener("animationend", cleanup);
   };
   flash.addEventListener("animationend", cleanup, { once: true });
+}
+
+function failMemoryGameOver(deathMessage) {
+  if (window.MemoryWordMinigame) {
+    MemoryWordMinigame.stop();
+  }
+  puzzleModalState.challengeType = null;
+
+  const deathLine = document.getElementById("game-over-death-msg");
+  if (deathLine) {
+    deathLine.textContent = deathMessage;
+  }
+  const subtitleEl = document.getElementById("game-over-subtitle");
+  if (subtitleEl) {
+    subtitleEl.textContent = MSG_GAME_OVER_SUBTITLE_COLLAPSE;
+  }
+
+  closePuzzleModal();
+  triggerExplosionFx({ cataclysm: true });
+  endGame();
 }
 
 function failBombDefusalGameOver(deathMessage) {
@@ -361,6 +382,8 @@ function resetGame() {
     flash.setAttribute("aria-hidden", "true");
   }
 
+  document.body.classList.remove("body--cataclysm-shake");
+
   const container = document.querySelector(".game-container");
   container.classList.remove("game-container--game-over", "game-container--shake");
   setGameOverOverlayVisible(false);
@@ -402,66 +425,175 @@ function bindRestartControls() {
   });
 }
 
+function createRoomTile(row, col) {
+  const roomButton = document.createElement("div");
+  roomButton.classList.add("room");
+  roomButton.setAttribute("role", "gridcell");
+  roomButton.setAttribute("aria-label", `Room ${row + 1}, ${col + 1}`);
+  roomButton.dataset.row = String(row);
+  roomButton.dataset.col = String(col);
+
+  const roomData = getRoom(row, col);
+
+  if (roomData.visited) {
+    roomButton.classList.add("visited");
+  }
+
+  if (isPlayerAt(row, col)) {
+    roomButton.classList.add("player");
+  }
+
+  if (roomData.hint) {
+    roomButton.classList.add("clue");
+  }
+
+  if (roomData.type === ROOM_TYPES.STAIRS) {
+    roomButton.classList.add("stairs");
+  }
+
+  if (
+    window.MemoryWordMinigame &&
+    row === MemoryWordMinigame.ROOM.row &&
+    col === MemoryWordMinigame.ROOM.col
+  ) {
+    roomButton.classList.add("room--memory-site");
+  }
+
+  if (
+    window.BombDefusalMinigame &&
+    row === BombDefusalMinigame.ROOM.row &&
+    col === BombDefusalMinigame.ROOM.col
+  ) {
+    roomButton.classList.add("room--bomb-site");
+  }
+
+  const centerButton = document.createElement("button");
+  centerButton.type = "button";
+  centerButton.classList.add("room-center");
+  centerButton.disabled = gameState.gameOver;
+  centerButton.textContent = `${row + 1},${col + 1}`;
+  centerButton.addEventListener("click", () => {
+    movePlayer(row, col);
+  });
+  roomButton.appendChild(centerButton);
+
+  createDoorElements(roomButton, roomData);
+
+  if (isPlayerAt(row, col)) {
+    const marker = document.createElement("span");
+    marker.classList.add("player-marker");
+    roomButton.appendChild(marker);
+  }
+
+  return roomButton;
+}
+
+/** Open doorways use flex gaps; click to close from an adjacent room you occupy. */
+function handlePassageClickHorizontal(row, leftCol) {
+  const { row: pr, col: pc } = gameState.playerPosition;
+  if (pr === row && pc === leftCol) {
+    toggleDoor(row, leftCol, "right");
+  } else if (pr === row && pc === leftCol + 1) {
+    toggleDoor(row, leftCol + 1, "left");
+  } else {
+    showMessage("You can only operate doors in your current room.");
+  }
+}
+
+function handlePassageClickVertical(topRow, col) {
+  const { row: pr, col: pc } = gameState.playerPosition;
+  if (pr === topRow && pc === col) {
+    toggleDoor(topRow, col, "down");
+  } else if (pr === topRow + 1 && pc === col) {
+    toggleDoor(topRow + 1, col, "up");
+  } else {
+    showMessage("You can only operate doors in your current room.");
+  }
+}
+
+function createHorizontalPassage(row, leftCol) {
+  const open = isDoorOpen(row, leftCol, "right");
+  const el = document.createElement(open ? "button" : "div");
+  el.className = `room-passage room-passage--h ${open ? "room-passage--open" : "room-passage--shut"}`;
+  if (open) {
+    el.type = "button";
+    el.disabled = gameState.gameOver;
+    el.setAttribute("aria-label", "Open doorway — click to close");
+    el.addEventListener("click", (event) => {
+      event.stopPropagation();
+      handlePassageClickHorizontal(row, leftCol);
+    });
+  } else {
+    el.setAttribute("aria-hidden", "true");
+  }
+  return el;
+}
+
+function createVerticalPassageBlock(topRow, col) {
+  const open = isDoorOpen(topRow, col, "down");
+  const wrap = document.createElement("div");
+  wrap.className = `room-passage room-passage--v ${open ? "room-passage--open" : "room-passage--shut"}`;
+  const hit = document.createElement(open ? "button" : "div");
+  hit.className = "room-passage__hit";
+  if (open) {
+    hit.type = "button";
+    hit.disabled = gameState.gameOver;
+    hit.setAttribute("aria-label", "Open doorway — click to close");
+    hit.addEventListener("click", (event) => {
+      event.stopPropagation();
+      handlePassageClickVertical(topRow, col);
+    });
+  } else {
+    hit.setAttribute("aria-hidden", "true");
+  }
+  wrap.appendChild(hit);
+  return wrap;
+}
+
+function createCornerBlock(r, c) {
+  const el = document.createElement("div");
+  el.className = "room-passage--corner";
+  const wOpen = isDoorOpen(r, c, "right") || isDoorOpen(r + 1, c, "right");
+  const hOpen = isDoorOpen(r, c, "down") || isDoorOpen(r, c + 1, "down");
+  const g = "var(--passage-gap)";
+  el.style.flexBasis = wOpen ? g : "0";
+  el.style.width = wOpen ? g : "0";
+  el.style.minWidth = wOpen ? g : "0";
+  el.style.minHeight = hOpen ? g : "0";
+  if (!wOpen && !hOpen) {
+    el.style.overflow = "hidden";
+  }
+  return el;
+}
+
 function renderGrid() {
   const gridElement = document.getElementById("room-grid");
   const { rows, cols } = gameState.gridSize;
   gridElement.innerHTML = "";
-  gridElement.style.gridTemplateColumns = `repeat(${cols}, minmax(74px, 1fr))`;
+  gridElement.style.gridTemplateColumns = "";
 
   for (let row = 0; row < rows; row += 1) {
+    const rowWrap = document.createElement("div");
+    rowWrap.className = "room-grid__row";
+
     for (let col = 0; col < cols; col += 1) {
-      const roomButton = document.createElement("div");
-      roomButton.classList.add("room");
-      roomButton.setAttribute("role", "gridcell");
-      roomButton.setAttribute("aria-label", `Room ${row + 1}, ${col + 1}`);
-      roomButton.dataset.row = String(row);
-      roomButton.dataset.col = String(col);
-
-      const roomData = getRoom(row, col);
-
-      if (roomData.visited) {
-        roomButton.classList.add("visited");
+      rowWrap.appendChild(createRoomTile(row, col));
+      if (col < cols - 1) {
+        rowWrap.appendChild(createHorizontalPassage(row, col));
       }
+    }
+    gridElement.appendChild(rowWrap);
 
-      if (isPlayerAt(row, col)) {
-        roomButton.classList.add("player");
+    if (row < rows - 1) {
+      const gapRow = document.createElement("div");
+      gapRow.className = "room-grid__gap-row";
+      for (let col = 0; col < cols; col += 1) {
+        gapRow.appendChild(createVerticalPassageBlock(row, col));
+        if (col < cols - 1) {
+          gapRow.appendChild(createCornerBlock(row, col));
+        }
       }
-
-      if (roomData.hint) {
-        roomButton.classList.add("clue");
-      }
-
-      if (roomData.type === ROOM_TYPES.STAIRS) {
-        roomButton.classList.add("stairs");
-      }
-
-      if (
-        window.BombDefusalMinigame &&
-        row === BombDefusalMinigame.ROOM.row &&
-        col === BombDefusalMinigame.ROOM.col
-      ) {
-        roomButton.classList.add("room--bomb-site");
-      }
-
-      const centerButton = document.createElement("button");
-      centerButton.type = "button";
-      centerButton.classList.add("room-center");
-      centerButton.disabled = gameState.gameOver;
-      centerButton.textContent = `${row + 1},${col + 1}`;
-      centerButton.addEventListener("click", () => {
-        movePlayer(row, col);
-      });
-      roomButton.appendChild(centerButton);
-
-      createDoorElements(roomButton, roomData);
-
-      if (isPlayerAt(row, col)) {
-        const marker = document.createElement("span");
-        marker.classList.add("player-marker");
-        roomButton.appendChild(marker);
-      }
-
-      gridElement.appendChild(roomButton);
+      gridElement.appendChild(gapRow);
     }
   }
 }
@@ -519,14 +651,14 @@ function createDoorElements(roomElement, roomData) {
     if (!door.exists) {
       return;
     }
+    if (door.open) {
+      return;
+    }
 
     const doorButton = document.createElement("button");
     doorButton.type = "button";
     doorButton.classList.add("door", `door-${direction}`);
     doorButton.disabled = gameState.gameOver;
-    if (door.open) {
-      doorButton.classList.add("open");
-    }
     doorButton.setAttribute("aria-label", `${direction} door`);
     doorButton.addEventListener("click", (event) => {
       event.stopPropagation();
@@ -615,6 +747,9 @@ function renderMcqChallenge(clearFeedback) {
   if (window.BombDefusalMinigame) {
     BombDefusalMinigame.stop();
   }
+  if (window.MemoryWordMinigame) {
+    MemoryWordMinigame.stop();
+  }
   puzzleModalState.challengeType = "mcq";
   setArcheryWrapVisible(false);
   setPuzzleModalArcheryMode(false);
@@ -669,6 +804,9 @@ function renderArcheryChallenge(clearFeedback) {
   if (window.BombDefusalMinigame) {
     BombDefusalMinigame.stop();
   }
+  if (window.MemoryWordMinigame) {
+    MemoryWordMinigame.stop();
+  }
   puzzleModalState.challengeType = "archery";
   setPuzzleModalArcheryMode(true);
   const titleEl = document.getElementById("puzzle-modal-title");
@@ -679,7 +817,7 @@ function renderArcheryChallenge(clearFeedback) {
   if (questionEl) {
     questionEl.style.whiteSpace = "";
     questionEl.textContent =
-      "A patrol drone weaves in the sky — only a 9 or 10 (center hit) clears this lock. How to shoot is on the left.";
+      "A patrol drone weaves in the sky — only hitting the main egg-shaped body clears this lock. How to shoot is on the left.";
   }
   const optionsEl = document.getElementById("puzzle-options");
   if (optionsEl) {
@@ -701,7 +839,6 @@ function renderArcheryChallenge(clearFeedback) {
     onShot(score) {
       if (score >= 9) {
         const cb = puzzleModalState.onSolved;
-        ArcheryMinigame.stop();
         closePuzzleModal();
         if (typeof cb === "function") {
           cb();
@@ -710,8 +847,27 @@ function renderArcheryChallenge(clearFeedback) {
       }
       const feedbackEl = document.getElementById("puzzle-feedback");
       if (feedbackEl) {
-        feedbackEl.textContent = "Hit the drone.";
+        feedbackEl.textContent = "Aim for the main egg body (not the side parts).";
       }
+    },
+  });
+}
+
+function renderMemoryWordChallenge(clearFeedback) {
+  if (!window.MemoryWordMinigame) {
+    return;
+  }
+  puzzleModalState.challengeType = "memory";
+  MemoryWordMinigame.render(clearFeedback, {
+    onSolved() {
+      const cb = puzzleModalState.onSolved;
+      closePuzzleModal();
+      if (typeof cb === "function") {
+        cb();
+      }
+    },
+    onGameOver() {
+      failMemoryGameOver(MSG_MEMORY_FAIL);
     },
   });
 }
@@ -746,6 +902,15 @@ function openPuzzleModal(onSolved) {
   puzzleModalState.challengeType = null;
   const { row, col } = gameState.playerPosition;
   if (
+    window.MemoryWordMinigame &&
+    row === MemoryWordMinigame.ROOM.row &&
+    col === MemoryWordMinigame.ROOM.col
+  ) {
+    renderMemoryWordChallenge(true);
+    setPuzzleModalVisible(true);
+    return;
+  }
+  if (
     window.BombDefusalMinigame &&
     row === BombDefusalMinigame.ROOM.row &&
     col === BombDefusalMinigame.ROOM.col
@@ -778,6 +943,9 @@ function closePuzzleModal() {
   if (window.BombDefusalMinigame) {
     BombDefusalMinigame.stop();
   }
+  if (window.MemoryWordMinigame) {
+    MemoryWordMinigame.stop();
+  }
   puzzleModalState.devPreview = false;
   puzzleModalState.onSolved = null;
   puzzleModalState.puzzleRaw = null;
@@ -797,7 +965,7 @@ function closePuzzleModal() {
 }
 
 function handlePuzzleChoice(chosenIndex) {
-  if (puzzleModalState.challengeType === "bomb") {
+  if (puzzleModalState.challengeType === "bomb" || puzzleModalState.challengeType === "memory") {
     return;
   }
   const display = puzzleModalState.currentDisplay;
@@ -908,6 +1076,21 @@ function openDevMinigame(kind) {
     puzzleModalState.currentDisplay = null;
     puzzleModalState.challengeType = null;
     renderBombDefusalChallenge(true);
+    setPuzzleModalVisible(true);
+    return;
+  }
+
+  if (kind === "memory") {
+    if (!window.MemoryWordMinigame) {
+      puzzleModalState.devPreview = false;
+      puzzleModalState.onSolved = null;
+      showMessage("Dev: mnemonic lock script missing — load memory-word-minigame.js.");
+      return;
+    }
+    puzzleModalState.puzzleRaw = null;
+    puzzleModalState.currentDisplay = null;
+    puzzleModalState.challengeType = null;
+    renderMemoryWordChallenge(true);
     setPuzzleModalVisible(true);
     return;
   }

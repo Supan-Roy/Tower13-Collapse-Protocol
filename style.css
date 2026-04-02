@@ -13,15 +13,25 @@
   --door-open: #67d8b1;
   --clue-accent: #c9a227;
   --stairs-accent: #6eb5ff;
+  /** Physical space between rooms when a doorway is open (matches old grid gap feel). */
+  --passage-gap: 0.75rem;
 }
 
 * {
   box-sizing: border-box;
 }
 
+html {
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
+  min-height: 100dvh;
+  max-width: 100%;
+  overflow-x: hidden;
   font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   background: radial-gradient(circle at top, #1b2233 0%, var(--bg) 45%);
   color: var(--text);
@@ -29,15 +39,18 @@ body {
 
 .game-shell {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
   justify-content: center;
   gap: 1.35rem;
-  padding: 2rem 1rem;
+  padding: 2rem min(1rem, 3vw);
   max-width: min(1320px, 100%);
+  width: 100%;
   margin: 0 auto;
   box-sizing: border-box;
+  overflow-x: hidden;
 }
 
 .game-shell__main {
@@ -194,9 +207,30 @@ body {
 }
 
 .room-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(74px, 1fr));
-  gap: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  width: 100%;
+}
+
+.room-grid__row,
+.room-grid__gap-row {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  width: 100%;
+  min-width: 0;
+}
+
+.room-grid__gap-row {
+  min-height: 0;
+}
+
+.room-grid__row > .room {
+  flex: 1 1 0;
+  min-width: 74px;
+  min-height: 0;
 }
 
 .room {
@@ -285,6 +319,13 @@ body {
     0 0 14px rgba(200, 80, 40, 0.2);
 }
 
+.room--memory-site {
+  border-color: rgba(100, 220, 255, 0.42);
+  box-shadow:
+    inset 0 0 0 1px rgba(120, 210, 255, 0.2),
+    0 0 16px rgba(60, 160, 220, 0.28);
+}
+
 .room-center {
   position: absolute;
   inset: 18%;
@@ -321,11 +362,6 @@ body {
   z-index: 3;
 }
 
-.door.open {
-  background: var(--door-open);
-  border-color: #1f8d74;
-}
-
 .door-up,
 .door-down {
   width: 28%;
@@ -356,6 +392,93 @@ body {
 
 .door-right {
   right: -5px;
+}
+
+/* Open doorways are real flex gaps between rooms (see .room-passage). */
+
+.room-passage {
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.room-passage--h.room-passage--shut {
+  flex: 0 0 0;
+  width: 0;
+  min-width: 0;
+  overflow: hidden;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.room-passage--h.room-passage--open {
+  flex: 0 0 var(--passage-gap);
+  width: var(--passage-gap);
+  min-width: var(--passage-gap);
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  align-self: stretch;
+  display: block;
+}
+
+.room-passage--h.room-passage--open:hover {
+  background: rgba(14, 17, 26, 0.25);
+}
+
+.room-passage--h.room-passage--open:focus-visible {
+  outline: 2px dashed rgba(110, 220, 190, 0.65);
+  outline-offset: 1px;
+}
+
+.room-passage--v {
+  flex: 1 1 0;
+  min-width: 74px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.room-passage--v.room-passage--shut .room-passage__hit {
+  flex: 0 0 0;
+  height: 0;
+  min-height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.room-passage--v.room-passage--open .room-passage__hit {
+  flex: 0 0 var(--passage-gap);
+  min-height: var(--passage-gap);
+  height: var(--passage-gap);
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  display: block;
+}
+
+.room-passage--v.room-passage--open .room-passage__hit:hover {
+  background: rgba(14, 17, 26, 0.25);
+}
+
+.room-passage--v.room-passage--open .room-passage__hit:focus-visible {
+  outline: 2px dashed rgba(110, 220, 190, 0.65);
+  outline-offset: 1px;
+}
+
+.room-passage--corner {
+  flex-shrink: 0;
+  pointer-events: none;
+  box-sizing: border-box;
 }
 
 .grid-help {
@@ -412,19 +535,30 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1.5rem;
+  padding: min(1.5rem, 4vw);
   background: rgba(4, 6, 12, 0.88);
   backdrop-filter: blur(6px);
   pointer-events: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  box-sizing: border-box;
+  max-height: 100vh;
+  max-height: 100dvh;
 }
 
 .game-over-overlay__panel {
   text-align: center;
-  max-width: 26rem;
+  max-width: min(26rem, calc(100vw - 2rem));
+  width: 100%;
   position: relative;
   z-index: 1;
   pointer-events: auto;
-  padding: 1.25rem 1rem;
+  padding: 1.25rem min(1rem, 3vw);
+  max-height: min(90vh, calc(100dvh - 2.5rem));
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  box-sizing: border-box;
   border: 1px solid rgba(255, 60, 60, 0.45);
   border-radius: 12px;
   background: linear-gradient(165deg, rgba(35, 12, 12, 0.95) 0%, rgba(12, 14, 22, 0.98) 100%);
@@ -483,9 +617,15 @@ body {
 .explosion-flash {
   position: fixed;
   inset: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
   z-index: 10050;
   pointer-events: none;
   display: block;
+  overflow: visible;
+  transform-origin: center center;
+  box-sizing: border-box;
   background:
     radial-gradient(ellipse 80% 55% at 50% 48%, rgba(255, 245, 200, 0.95) 0%, transparent 45%),
     radial-gradient(ellipse 100% 80% at 50% 50%, rgba(255, 90, 30, 0.65) 0%, transparent 55%),
@@ -547,7 +687,7 @@ body {
   }
   100% {
     opacity: 0;
-    transform: scale(1.5);
+    transform: scale(1.38);
     filter: brightness(0.35) saturate(0.9);
   }
 }
@@ -581,33 +721,34 @@ body {
     transform: translate3d(0, 0, 0);
   }
   6% {
-    transform: translate3d(-16px, 11px, 0) rotate(-0.65deg);
+    transform: translate3d(-10px, 7px, 0) rotate(-0.5deg);
   }
   14% {
-    transform: translate3d(14px, -10px, 0) rotate(0.5deg);
+    transform: translate3d(9px, -6px, 0) rotate(0.4deg);
   }
   24% {
-    transform: translate3d(-12px, 14px, 0) rotate(-0.45deg);
+    transform: translate3d(-8px, 9px, 0) rotate(-0.35deg);
   }
   35% {
-    transform: translate3d(16px, -8px, 0) rotate(0.55deg);
+    transform: translate3d(10px, -5px, 0) rotate(0.42deg);
   }
   48% {
-    transform: translate3d(-14px, 10px, 0) rotate(-0.4deg);
+    transform: translate3d(-9px, 7px, 0) rotate(-0.3deg);
   }
   62% {
-    transform: translate3d(11px, -11px, 0) rotate(0.35deg);
+    transform: translate3d(7px, -7px, 0) rotate(0.28deg);
   }
   78% {
-    transform: translate3d(-8px, 6px, 0);
+    transform: translate3d(-5px, 4px, 0);
   }
   90% {
-    transform: translate3d(5px, -4px, 0);
+    transform: translate3d(4px, -3px, 0);
   }
 }
 
-.game-shell--cataclysm-shake {
+.body--cataclysm-shake {
   animation: cataclysmShake 1.9s ease-out;
+  will-change: transform;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -615,7 +756,7 @@ body {
     animation: explosionBurst 0.75s ease-out forwards;
   }
 
-  .game-shell--cataclysm-shake {
+  .body--cataclysm-shake {
     animation: screenShake 0.5s ease-out;
   }
 }
@@ -655,6 +796,17 @@ body {
 .puzzle-modal--bomb .puzzle-modal__panel {
   width: min(100%, 34rem);
   max-width: 100%;
+}
+
+.puzzle-modal--memory .puzzle-modal__panel {
+  width: min(100%, 42rem);
+  max-width: 100%;
+}
+
+.puzzle-modal--memory .puzzle-modal__question {
+  margin-bottom: 0.65rem;
+  font-size: 0.9rem;
+  color: #b8d8ec;
 }
 
 .puzzle-modal--archery .puzzle-modal__question {
@@ -739,6 +891,281 @@ body {
 
 .puzzle-bomb-wrap[hidden] {
   display: none !important;
+}
+
+/* ——— Mnemonic word lock ——— */
+.puzzle-memory-wrap {
+  margin: 0 0 0.65rem;
+  border-radius: 14px;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse 90% 70% at 20% 0%, rgba(80, 200, 255, 0.14) 0%, transparent 55%),
+    radial-gradient(ellipse 80% 60% at 100% 100%, rgba(180, 100, 255, 0.1) 0%, transparent 50%),
+    linear-gradient(165deg, #0c121c 0%, #080a10 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 0 0 1px rgba(100, 190, 255, 0.15),
+    0 14px 36px rgba(0, 0, 0, 0.45);
+}
+
+.puzzle-memory-wrap[hidden] {
+  display: none !important;
+}
+
+.memory-phase {
+  position: relative;
+  padding: 1rem 1rem 1.1rem;
+  min-height: 12rem;
+}
+
+.memory-phase--memorize {
+  overflow: hidden;
+}
+
+.memory-memorize__veil {
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.06'/%3E%3C/svg%3E");
+  opacity: 0.7;
+  pointer-events: none;
+  mix-blend-mode: overlay;
+}
+
+.memory-memorize__kicker {
+  position: relative;
+  z-index: 1;
+  margin: 0 0 0.75rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(160, 220, 255, 0.85);
+  text-shadow: 0 0 20px rgba(100, 200, 255, 0.35);
+}
+
+.memory-sequence-display {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr));
+  gap: 0.5rem 0.55rem;
+  margin-bottom: 1rem;
+}
+
+.memory-seq-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 10px;
+  border: 1px solid rgba(120, 200, 255, 0.28);
+  background: linear-gradient(145deg, rgba(20, 40, 58, 0.92) 0%, rgba(8, 14, 24, 0.95) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 4px 14px rgba(0, 0, 0, 0.35);
+  animation: memory-slot-in 0.55s ease backwards;
+  animation-delay: calc(var(--i, 0) * 0.06s);
+}
+
+@keyframes memory-slot-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.memory-seq-slot__idx {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: rgba(140, 200, 240, 0.75);
+}
+
+.memory-seq-slot__word {
+  font-size: 0.98rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #e8f4ff;
+  text-shadow: 0 0 18px rgba(120, 210, 255, 0.25);
+}
+
+.memory-memorize__countdown-wrap {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.45rem;
+}
+
+.memory-countdown {
+  font-size: 2.35rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: #7ee8ff;
+  text-shadow:
+    0 0 24px rgba(100, 220, 255, 0.55),
+    0 0 2px rgba(255, 255, 255, 0.4);
+  animation: memory-pulse 1s ease-in-out infinite;
+}
+
+@keyframes memory-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.88;
+    transform: scale(1.03);
+  }
+}
+
+.memory-countdown__suffix {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(180, 220, 245, 0.65);
+}
+
+.memory-phase--recall {
+  padding-top: 0.85rem;
+}
+
+.memory-phase--recall-urgent {
+  border-radius: 12px;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 130, 90, 0.4),
+    0 0 20px rgba(200, 60, 40, 0.2);
+}
+
+.memory-phase--recall-urgent .memory-recall__badge--timer {
+  border-color: rgba(255, 160, 120, 0.55);
+  color: #ffd4c8;
+}
+
+.memory-phase--recall-urgent .memory-recall__badge--timer strong {
+  color: #ff9a78;
+  text-shadow: 0 0 12px rgba(255, 120, 80, 0.45);
+}
+
+.memory-recall__hud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 0.55rem;
+}
+
+.memory-recall__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border: 1px solid rgba(140, 200, 255, 0.25);
+  background: rgba(8, 20, 36, 0.75);
+  color: #a8d4f0;
+}
+
+.memory-recall__badge strong {
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #e8f8ff;
+}
+
+.memory-recall__instr {
+  margin: 0 0 0.75rem;
+  font-size: 0.86rem;
+  line-height: 1.45;
+  color: #9ec8e8;
+}
+
+.memory-word-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.5rem;
+  justify-content: center;
+  align-content: flex-start;
+  min-height: 8rem;
+  padding: 0.35rem 0;
+}
+
+.memory-word-chip {
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.5rem 0.75rem;
+  border-radius: 999px;
+  cursor: pointer;
+  border: 1px solid rgba(130, 190, 240, 0.35);
+  background: linear-gradient(180deg, rgba(35, 55, 85, 0.95) 0%, rgba(12, 18, 32, 0.98) 100%);
+  color: #dceaf8;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  transition:
+    transform 0.12s ease,
+    border-color 0.12s ease,
+    box-shadow 0.12s ease,
+    background 0.12s ease;
+}
+
+.memory-word-chip:hover:not(:disabled) {
+  transform: translateY(-2px);
+  border-color: rgba(160, 230, 255, 0.55);
+  box-shadow:
+    0 4px 16px rgba(60, 160, 220, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.memory-word-chip:disabled,
+.memory-word-chip--picked {
+  opacity: 0.38;
+  cursor: default;
+  transform: none;
+  border-color: rgba(100, 200, 160, 0.35);
+  background: linear-gradient(180deg, rgba(25, 55, 45, 0.85) 0%, rgba(8, 22, 18, 0.95) 100%);
+  color: #9edcc8;
+}
+
+.memory-progress-dots {
+  display: flex;
+  justify-content: center;
+  gap: 0.4rem;
+  margin-top: 0.85rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid rgba(100, 160, 200, 0.15);
+}
+
+.memory-progress-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(80, 120, 160, 0.45);
+  box-shadow: 0 0 8px rgba(80, 160, 220, 0.2);
+  transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.memory-progress-dot--active {
+  background: rgba(120, 220, 255, 0.95);
+  box-shadow: 0 0 12px rgba(100, 220, 255, 0.65);
+  transform: scale(1.25);
+}
+
+.memory-progress-dot--done {
+  background: rgba(80, 220, 160, 0.85);
+  box-shadow: 0 0 10px rgba(80, 220, 160, 0.45);
 }
 
 .bomb-hint-bar {
